@@ -9,7 +9,7 @@
 <p align="center"><b>Open source server software for Minecraft: Bedrock Edition written in Java</b></p>
 
 # ℹ️ Information
-Netherrack is an experimental Minecraft: Bedrock Edition server software project focused on learning, experimentation, and building a server implementation from the ground up.
+Netherrack is an experimental vibe coded Minecraft: Bedrock Edition server software project focused on learning, experimentation, and building a server implementation from the ground up.
 
 ## 🚧 Current status
 
