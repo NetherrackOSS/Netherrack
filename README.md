@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="/logo-dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="/logo-light.png">
+    <source media="(prefers-color-scheme: dark)" srcset=".github/logo-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset=".github/logo-light.png">
     <img alt="Netherrack Logo" src="/logo-light.png">
   </picture>
 </p>
