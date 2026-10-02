@@ -11,7 +11,6 @@
 <p align="center">
   <img src="https://img.shields.io/github/license/NetherrackOSS/Netherrack?style=flat" alt="License">
   <img src="https://img.shields.io/github/stars/NetherrackOSS/Netherrack?style=flat" alt="GitHub Stars">
-  <img src="https://img.shields.io/github/commit-activity/m/NetherrackOSS/Netherrack?style=flat" alt="Commit Activity">
   <img src="https://img.shields.io/badge/Minecraft-Bedrock-62B47A?style=flat" alt="Minecraft Bedrock">
   <img src="https://img.shields.io/badge/Java-17%2B-ED8B00?style=flat" alt="Java 17+">
   <img src="https://img.shields.io/badge/Build-Maven-C71A36?style=flat" alt="Maven">
