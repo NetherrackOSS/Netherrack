@@ -19,7 +19,7 @@
 # ℹ️ Information
 Netherrack is an experimental vibe coded Minecraft: Bedrock Edition server software project focused on learning, experimentation, and building a server implementation from the ground up.
 > [!IMPORTANT]
-> Netherrack is not afilliated by Mojang or Microsoft.
+> Netherrack is not afilliated with Mojang or Microsoft.
 
 ## 🚧 Current status
 
