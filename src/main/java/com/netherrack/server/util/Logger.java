@@ -18,7 +18,7 @@ public final class Logger {
     private static final String TIMESTAMP_COLOR = "\u001B[36m";
     private static final String THREAD_COLOR = "\u001B[0;33m";
     private static final String INFO_COLOR = "\u001B[0;34m";
-    private static final String WARN_COLOR = "\u001B[1;33m";
+    private static final String WARN_COLOR = "\u001B[0;31m";
     private static final String ERROR_COLOR = "\u001B[1;31m";
     private static final String DEBUG_COLOR = null;
 
