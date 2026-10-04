@@ -1,587 +1,246 @@
 # Contributing to Netherrack
 
-Thank you for your interest in contributing to Netherrack!
+Thank you for your interest in contributing to **Netherrack**!
 
-Netherrack is an open-source Minecraft: Bedrock Edition server implementation written in Java. The project is currently in early development and is being built from the ground up with a focus on learning, experimentation, networking, protocol implementation, world systems, and server architecture.
+Netherrack is an experimental, open-source Minecraft: Bedrock Edition server software project written in Java. The project is being developed from the ground up with a focus on learning, experimentation, networking, protocol implementation, and server architecture.
 
-Because Netherrack is still evolving, contributions of all kinds are welcome — code, testing, documentation, bug reports, protocol research, ideas, and experimentation.
+Because Netherrack is still in early development, contributions of all kinds are welcome — whether you're fixing a bug, improving the codebase, researching the Bedrock protocol, adding a feature, improving documentation, or simply helping test the server.
 
-Table of Contents
+## 📋 Before You Start
 
-Before You Start
+Before contributing, please:
 
-Development Environment
+1. Read the [README](README.md).
+2. Check existing issues and pull requests to make sure your idea hasn't already been discussed.
+3. For larger changes, open an issue first so the approach can be discussed before significant development work begins.
+4. Make sure your changes are compatible with the project's goals and licensing.
 
-Getting the Code
+Netherrack is still evolving rapidly, so APIs, internal systems, and project structure may change without notice.
 
-Building Netherrack
+## 🛠️ Development Setup
 
-Project Structure
+Netherrack uses **Java and Maven**.
 
-Making Changes
+### Requirements
 
-Code Guidelines
+You will need:
 
-Testing
+* A supported Java Development Kit (JDK)
+* Apache Maven
+* Git
 
-Commit Guidelines
+A Linux development environment is recommended for testing, although contributions should avoid unnecessarily being Linux-specific unless the feature itself requires it.
 
-Pull Requests
+### Clone the Repository
 
-Bug Reports
-
-Feature Requests
-
-Protocol and Networking Contributions
-
-Documentation Contributions
-
-What We Look For
-
-What to Avoid
-
-License
-
-Before You Start
-
-Please keep in mind that Netherrack is experimental and under active development.
-
-APIs, internal architecture, networking code, and project conventions may change without notice. A contribution that makes sense today may need to be revised as the project develops.
-
-Before starting a large change, especially architectural changes, it is recommended to open an issue or discussion first so the direction can be agreed upon.
-
-Small fixes and improvements can generally be submitted directly as pull requests.
-
-Development Environment
-
-Netherrack currently uses:
-
-Java 17 or newer
-
-Maven
-
-Git
-
-A development environment capable of running Java applications
-
-Netherrack uses CloudburstMC components for RakNet transport and Minecraft: Bedrock protocol functionality.
-
-Make sure Java is available:
-
-java -version
-
-
-You should be using Java 17 or newer.
-
-You can also verify Maven:
-
-mvn -version
-
-Getting the Code
-
-Fork the repository on GitHub and clone your fork:
-
-git clone https://github.com/YOUR_USERNAME/Netherrack.git
+```bash
+git clone https://github.com/NetherrackOSS/Netherrack.git
 cd Netherrack
+```
 
+### Build the Project
 
-Add the upstream repository:
+Use Maven to build Netherrack:
 
-git remote add upstream https://github.com/NetherrackOSS/Netherrack.git
-
-
-You can verify your remotes with:
-
-git remote -v
-
-
-Before starting new work, make sure your local branch is up to date:
-
-git fetch upstream
-git checkout main
-git pull upstream main
-
-
-Create a branch for your change:
-
-git checkout -b feature/my-change
-
-
-Use a descriptive branch name whenever possible.
-
-Examples:
-
-feature/entity-system
-feature/chunk-generation
-fix/packet-handling
-fix/server-shutdown
-docs/contributing-guide
-refactor/world-storage
-
-Building Netherrack
-
-Netherrack is built with Maven.
-
-To compile the project:
-
-mvn compile
-
-
-To create a distributable JAR:
-
-mvn package
-
-
-The Maven build produces a shaded JAR containing the project's required dependencies, allowing the resulting server JAR to be run directly with Java.
-
-For example:
-
-java -jar target/netherrack-0.1.0-SNAPSHOT.jar
-
-
-If your change affects the build system or dependencies, make sure a clean build succeeds before opening a pull request.
-
+```bash
 mvn clean package
+```
 
-Project Structure
+The resulting JAR can be found in the `target/` directory.
 
-The repository is currently intentionally small.
+## 🧪 Testing Your Changes
 
-The primary source code is located under:
+Please test your changes before submitting a pull request.
 
-src/main/
+Depending on what you changed, this may include:
 
+* Starting and stopping the server.
+* Testing console commands.
+* Testing `server.properties`.
+* Connecting with a Bedrock Edition client.
+* Testing login and networking behavior.
+* Testing block interactions.
+* Testing world-related functionality.
+* Testing on Linux where applicable.
+* Checking that existing functionality has not regressed.
 
-The project is built using:
+For networking or protocol-related changes, testing with an actual Bedrock client is strongly encouraged.
 
-pom.xml
+If your change cannot currently be tested because the relevant Netherrack systems do not exist yet, explain this in your pull request.
 
+## 🌱 Areas Where Contributions Are Welcome
 
-Documentation and project-level configuration may be located in the repository root or under:
-
-.github/
-
-
-As the project grows, additional modules and directories may be introduced.
-
-Do not assume that the current structure is permanent.
-
-Making Changes
-
-When working on Netherrack, try to keep changes focused.
-
-A good pull request should generally solve one problem or implement one cohesive feature.
-
-For example:
-
-Good:
-
-Add basic chunk serialization
-
-
-Less desirable:
-
-Rewrite networking, add entities, change logging,
-reformat the entire project, and update dependencies
-
-
-Large changes are sometimes necessary, but they should be discussed beforehand when they significantly affect the project's architecture.
-
-Keep Changes Focused
-
-Avoid unrelated modifications such as:
-
-Reformatting files unrelated to your change
-
-Renaming unrelated classes
-
-Changing dependencies without a reason
-
-Modifying unrelated behavior
-
-Mixing large refactors with feature work
-
-Committing generated files
-
-Focused changes make code review substantially easier.
-
-Code Guidelines
-
-Netherrack is a Java project. Follow the existing style of the code you are modifying.
-
-In general:
-
-Prefer clear and descriptive names.
-
-Keep methods reasonably small and focused.
-
-Avoid unnecessary abstractions.
-
-Prefer straightforward code over clever code.
-
-Document non-obvious behavior.
-
-Avoid introducing dependencies when the JDK or existing project dependencies are sufficient.
-
-Handle errors deliberately rather than silently ignoring them.
-
-Avoid unnecessary global state.
-
-Keep public APIs minimal until they are well established.
-
-Comments
-
-Comments should explain why something is done when the reason is not obvious from the code.
-
-Prefer:
-
-// Bedrock clients expect this packet to be sent after the connection is established.
-sendLoginSuccess();
-
-
-over comments that simply repeat the code:
-
-// Send login success.
-sendLoginSuccess();
-
-
-Temporary debugging comments and dead code should not be committed.
-
-Testing
-
-Netherrack is still in an early stage, so not every subsystem currently has comprehensive automated tests.
-
-Nevertheless, contributors should test their changes as thoroughly as reasonably possible.
-
-At minimum, run:
-
-mvn clean package
-
-
-If your change affects server behavior, networking, protocol handling, world logic, commands, or configuration, test the affected functionality manually as well.
-
-When submitting a pull request, mention what you tested.
-
-For example:
-
-Testing:
-- mvn clean package
-- Started the server successfully
-- Connected using a Bedrock client
-- Verified the new command
-
-
-If a change cannot currently be tested automatically, explain how you tested it manually.
-
-Commit Guidelines
-
-Write commits that clearly describe the change being made.
-
-Prefer:
-
-Add basic chunk loading
-
-Fix server shutdown handling
-
-Implement grass block registration
-
-
-over:
-
-stuff
-
-changes
-
-fixed things
-
-
-A commit does not need to follow a complicated conventional-commit format unless the project adopts one in the future.
-
-The most important thing is that the commit message accurately describes the change.
-
-Pull Requests
-
-When your work is ready, push your branch:
-
-git push origin feature/my-change
-
-
-Then open a pull request against the main branch of Netherrack.
-
-A good pull request should explain:
-
-What changed?
-
-Briefly describe the implementation.
-
-Why?
-
-Explain the problem being solved or the reason for the change.
-
-How was it tested?
-
-Include the commands and manual testing you performed.
-
-For example:
-
-## Summary
-
-Adds the initial implementation of chunk loading.
-
-## Testing
-
-- mvn clean package
-- Started Netherrack locally
-- Loaded a test world
-- Verified chunks are loaded correctly
-
-Keep Pull Requests Reviewable
-
-Please avoid unnecessarily large pull requests.
-
-If a feature requires substantial work, consider breaking it into several smaller pull requests.
-
-For example:
-
-Add the basic data structures.
-
-Add serialization.
-
-Add loading.
-
-Add persistence.
-
-Integrate the system with the server.
-
-This makes it easier to review and identify problems.
-
-Review Feedback
-
-Pull requests may receive requests for changes.
-
-Please treat review as part of the development process rather than as criticism. The goal is to produce a maintainable project and establish good architecture as Netherrack grows.
-
-Bug Reports
-
-Before opening a bug report, make sure you are testing a reasonably current version of Netherrack.
-
-When reporting a bug, include as much useful information as possible.
-
-A good report should include:
-
-What you expected to happen
-
-What actually happened
-
-Steps to reproduce the problem
-
-Java version
-
-Operating system
-
-Netherrack version or commit
-
-Relevant console output or stack traces
-
-Minecraft Bedrock client version, when relevant
-
-Any configuration required to reproduce the issue
-
-For example:
-
-## Bug
-
-The server crashes when a client disconnects during login.
-
-## Steps to Reproduce
-
-1. Start Netherrack.
-2. Connect with a Bedrock client.
-3. Disconnect before login completes.
-
-## Expected Behavior
-
-The connection should be closed cleanly.
-
-## Actual Behavior
-
-The server throws an exception and terminates.
-
-## Environment
-
-Java: 17
-OS: Linux
-Netherrack: <commit>
-
-
-Please remove sensitive information from logs before posting them.
-
-Feature Requests
-
-Feature requests are welcome.
-
-Before proposing a feature, consider whether it fits Netherrack's current goals.
-
-Netherrack aims to develop an independent Bedrock server implementation from the ground up. It is not intended to be a clone of another server implementation.
-
-When proposing a feature, explain:
-
-What the feature does
-
-Why it would be useful
-
-How you think it could fit into Netherrack
-
-Any relevant Bedrock protocol or Minecraft behavior
-
-Whether you are willing to implement it yourself
-
-For large architectural changes, discussing the design before implementation is strongly encouraged.
-
-Protocol and Networking Contributions
-
-Networking is a particularly important part of Netherrack.
-
-The project uses CloudburstMC components for RakNet transport and Bedrock protocol functionality.
-
-When working on networking or protocol code:
-
-Reference the relevant Bedrock protocol behavior when possible.
-
-Avoid guessing when packet behavior can be verified.
-
-Keep protocol-specific behavior isolated where practical.
-
-Document unusual protocol behavior.
-
-Test both successful and invalid packet flows where possible.
-
-Be especially careful with connection lifecycle and resource management.
-
-If you have discovered behavior through protocol research, packet captures, documentation, or experimentation, include that context in your pull request.
-
-Documentation Contributions
-
-Documentation is just as valuable as code.
-
-You can contribute by improving:
-
-Setup instructions
-
-Architecture documentation
-
-Protocol notes
-
-Developer documentation
-
-Examples
-
-Configuration documentation
-
-Troubleshooting information
-
-Comments and JavaDoc
-
-Contribution documentation
-
-If you notice that something is difficult to understand, that is often a good indication that the documentation could be improved.
-
-What We Look For
-
-Good contributions generally:
-
-Solve a real problem.
-
-Keep the implementation understandable.
-
-Fit Netherrack's goals.
-
-Avoid unnecessary complexity.
-
-Include appropriate testing.
-
-Explain non-obvious design decisions.
-
-Keep unrelated changes out of the pull request.
-
-Improve the project for future contributors.
-
-Because Netherrack is still young, we especially value contributions that improve the foundations of the project.
+Netherrack is still a young project, so there are many areas where contributions can help.
 
 Examples include:
 
-Networking improvements
+* Bedrock protocol implementation
+* RakNet/networking integration
+* Login and play handling
+* World and chunk systems
+* Block systems
+* Entity systems
+* Persistent world storage
+* Server configuration
+* Console commands
+* Logging
+* Performance improvements
+* Testing
+* Documentation
+* Bug fixes
+* Developer tooling
+* Linux compatibility
+* Future plugin/API development
 
-Protocol handling
+If you're interested in implementing something that isn't currently listed, feel free to open an issue and discuss it.
 
-World and chunk systems
+## 🧱 Architecture and Design
 
-Block systems
+Netherrack is being developed independently rather than as a clone of an existing Minecraft server implementation.
 
-Entity systems
+When contributing, please keep the project's architecture and long-term goals in mind.
 
-Persistence
+Avoid copying implementation code from other server software. Inspiration and research are welcome, but contributed code should be independently implemented and appropriately licensed.
 
-Server lifecycle
+Netherrack uses open-source CloudburstMC components for networking and Bedrock protocol functionality. Contributions involving these components should respect their respective licenses and upstream projects.
 
-Configuration
+## ✨ Code Style
 
-Testing infrastructure
+Try to keep code:
 
-Developer tooling
+* Readable
+* Simple
+* Consistent with the surrounding code
+* Properly named
+* Focused on one responsibility where practical
 
-Documentation
+Avoid unnecessarily complicated abstractions, especially when a simpler implementation is sufficient.
 
-What to Avoid
+Comments should explain **why** something is done when the reason isn't obvious from the code itself.
 
-Please avoid:
+## 🐛 Reporting Bugs
 
-Copying large portions of another server implementation.
+When reporting a bug, please provide as much useful information as possible.
 
-Introducing unnecessary dependencies.
+A good bug report should include:
 
-Making broad architectural changes without discussion.
+* What happened
+* What you expected to happen
+* Steps to reproduce the issue
+* Netherrack version or commit
+* Operating system
+* Java version
+* Minecraft Bedrock Edition version
+* Relevant console output or stack traces
+* Any additional information that could help reproduce the problem
 
-Committing generated build artifacts.
+For crashes, please include the complete relevant stack trace whenever possible.
 
-Committing IDE-specific configuration unless explicitly needed.
+## 💡 Feature Requests
 
-Silently changing public behavior.
+Feature requests are welcome.
 
-Hiding errors or exceptions.
+Before opening one, consider whether the feature fits Netherrack's current goals.
 
-Submitting code that has not been tested at all.
+A useful feature request should explain:
 
-Combining unrelated changes into one pull request.
+* What the feature would do
+* Why it would be useful
+* How it could potentially work
+* Whether it depends on other unfinished systems
 
-Netherrack's architecture is intentionally being developed independently, so contributions should respect that goal.
+Keep in mind that some features may be intentionally postponed while the underlying server architecture is being developed.
 
-Community and Conduct
+## 🔀 Pull Requests
 
-Please be respectful and constructive when interacting with maintainers and other contributors.
+When submitting a pull request:
 
-We welcome contributors regardless of experience level.
+1. Keep the PR focused on one change or closely related set of changes.
+2. Explain what you changed.
+3. Explain why you changed it.
+4. Mention how you tested it.
+5. Include relevant issue numbers when applicable.
+6. Avoid unrelated formatting or refactoring changes.
+7. Make sure the project still builds successfully.
 
-If you disagree with an implementation or design decision, explain your reasoning and, when possible, provide an alternative.
+A good pull request description might look like:
 
-Technical discussion is encouraged; personal attacks and hostile behavior are not.
+```text
+## What does this PR do?
 
-If the repository contains a CODE_OF_CONDUCT.md, its requirements apply to all project interactions.
+Adds basic support for XYZ.
 
-Security Issues
+## Why?
 
-Please do not publicly disclose an exploitable security vulnerability before giving maintainers an opportunity to investigate it.
+This is required for the next stage of the login/play flow.
 
-If the repository provides a security policy or private vulnerability reporting mechanism, use that process instead of opening a public issue.
+## Testing
 
-If no security reporting process currently exists, contact the project maintainers before publicly disclosing a serious vulnerability.
+- [x] `mvn clean package`
+- [x] Tested server startup
+- [x] Tested with Bedrock client
+- [x] Tested on Linux
+```
 
-Final Notes
+Pull requests may be requested to change, simplified, or declined if they do not fit the project's current direction. This is especially likely for large architectural changes in an early-stage project.
 
-Netherrack is a work in progress.
+## 📦 Dependencies
 
-There are many parts of Minecraft: Bedrock Edition that have not yet been implemented, and the architecture will continue to evolve as the project grows.
+If your contribution requires a new dependency:
 
-You do not need to be an expert in Minecraft internals, networking, or Java to contribute. If you are interested in learning, experimenting, researching the protocol, improving the codebase, or helping build Netherrack, your contribution is welcome.
+* Explain why it is needed.
+* Prefer established and actively maintained libraries.
+* Make sure its license is compatible with Netherrack's GPL-3.0 license.
+* Avoid adding dependencies for functionality that can reasonably be implemented without one.
 
-Thank you for helping build Netherrack! ❤️
+Do not copy third-party source code into Netherrack without verifying that its license permits doing so.
+
+## 🤖 AI-Assisted Contributions
+
+AI-assisted development is allowed.
+
+However, contributors are responsible for the code they submit.
+
+If you use an AI coding assistant:
+
+* Review the generated code before submitting it.
+* Make sure you understand what the code does.
+* Verify that it builds and behaves correctly.
+* Check for copied or potentially copyrighted implementation details.
+* Do not submit large amounts of unreviewed generated code simply because it compiles.
+
+AI assistance does not remove the contributor's responsibility for their contribution.
+
+## 📜 Licensing
+
+Netherrack is licensed under the **GNU General Public License v3.0**.
+
+By submitting a contribution, you agree that your contribution may be distributed under the project's license.
+
+Do not submit code that you do not have the right to contribute.
+
+For third-party code or dependencies, make sure their licenses are compatible and properly respected.
+
+## 🌐 Minecraft and Mojang/Microsoft
+
+Netherrack is an independent project.
+
+Netherrack is **not affiliated with, endorsed by, or sponsored by Mojang Studios or Microsoft**.
+
+Contributors should not represent Netherrack as an official Minecraft product.
+
+## 🤝 Community
+
+Please be respectful when interacting with other contributors.
+
+Constructive criticism, technical disagreement, and different approaches are completely normal in open-source development. Personal attacks, harassment, discrimination, or deliberately disruptive behavior are not acceptable.
+
+Remember that Netherrack is a learning and experimental project. Not every contribution needs to be perfect on the first attempt.
+
+## 🚀 Final Notes
+
+Netherrack is still at an early stage, and there is a lot left to build.
+
+If you're interested in Minecraft server development, Java, networking, Bedrock protocol research, world systems, or simply experimenting with how a server works internally, you're welcome to contribute.
+
+**Have fun, experiment, and help build Netherrack!**
