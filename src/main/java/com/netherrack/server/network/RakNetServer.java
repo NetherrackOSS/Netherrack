@@ -14,7 +14,7 @@ import org.cloudburstmc.netty.channel.raknet.RakChannelFactory;
 import org.cloudburstmc.netty.channel.raknet.RakServerChannel;
 import org.cloudburstmc.netty.channel.raknet.config.RakChannelOption;
 import org.cloudburstmc.protocol.bedrock.BedrockServerSession;
-import org.cloudburstmc.protocol.bedrock.codec.v776.Bedrock_v776;
+import org.cloudburstmc.protocol.bedrock.codec.v2193.Bedrock_v2193;
 import org.cloudburstmc.protocol.bedrock.netty.initializer.BedrockServerInitializer;
 import com.netherrack.server.world.World;
 
@@ -51,7 +51,7 @@ public class RakNetServer {
         ChannelFuture future = new ServerBootstrap()
                 .channelFactory(RakChannelFactory.server(NioDatagramChannel.class))
                 .group(eventLoopGroup)
-                .option(RakChannelOption.RAK_SUPPORTED_PROTOCOLS, new int[]{Bedrock_v776.CODEC.getRaknetProtocolVersion()})
+                .option(RakChannelOption.RAK_SUPPORTED_PROTOCOLS, new int[]{Bedrock_v2193.CODEC.getRaknetProtocolVersion()})
                 .option(RakChannelOption.RAK_GUID, guid)
                 .option(RakChannelOption.RAK_MAX_CONNECTIONS, config.getInt("max-players", 20))
                 .option(RakChannelOption.RAK_ADVERTISEMENT, Unpooled.wrappedBuffer(buildAdvertisement()))
@@ -107,8 +107,8 @@ public class RakNetServer {
         String advertisement = new StringJoiner(";", "", ";")
                 .add("MCPE")
                 .add(motd)
-                .add(Integer.toString(Bedrock_v776.CODEC.getProtocolVersion()))
-                .add(Bedrock_v776.CODEC.getMinecraftVersion())
+                .add(Integer.toString(Bedrock_v2193.CODEC.getProtocolVersion()))
+                .add(Bedrock_v2193.CODEC.getMinecraftVersion())
                 .add("0")
                 .add(Integer.toString(maxPlayers))
                 .add(Long.toUnsignedString(guid))

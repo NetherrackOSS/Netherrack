@@ -1,6 +1,7 @@
 package com.netherrack.server;
 
 import com.netherrack.server.network.RakNetServer;
+import com.netherrack.server.util.AnsiSupport;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.world.World;
 import com.netherrack.server.world.WorldManager;
@@ -26,6 +27,7 @@ public class Netherrack {
     }
 
     public static void main(String[] args) {
+        AnsiSupport.init();
         new Netherrack().start();
     }
 
@@ -49,7 +51,7 @@ public class Netherrack {
         rakNetServer.start(world);
 
         sleep(150);
-        Logger.info("This is an early build; no Bedrock world join (StartGame) or plugin API yet.");
+        Logger.info("This is an early build; no plugin API yet.");
 
         sleep(300);
         Logger.info("Preparing spawn area...");

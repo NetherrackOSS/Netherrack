@@ -16,16 +16,23 @@ import java.util.Map;
 
 /**
  * Vanilla data Netherrack needs to speak Bedrock's protocol correctly, sourced from
- * PMMP's BedrockData project (https://github.com/pmmp/BedrockData, CC0), pinned to the
- * "bedrock-1.21.70" tag so it lines up exactly with the Bedrock_v776 (1.21.60) codec
- * this project targets:
+ * PMMP's BedrockData project (https://github.com/pmmp/BedrockData, CC0). The codec this
+ * project targets is Bedrock_v2193 (1.26.50) - that has to match the real client's wire
+ * protocol exactly, it's not a free choice. The bundled data below is NOT an exact match
+ * for that version though, since BedrockData doesn't have a tag that far ahead yet:
  * <p>
- * - canonical_block_states.nbt: every vanilla block state, in a fixed order. The index
- *   a block ends up at here IS its network "runtime ID" - both server and client build
- *   the same table from the same file, so they agree on IDs without the server having
- *   to send one per block.
- * - entity_identifiers.nbt: the vanilla entity type registry.
- * - biome_definitions.nbt: the (legacy, pre-1.21.80) raw-NBT biome registry.
+ * - canonical_block_states.nbt / entity_identifiers.nbt: from the "bedrock-1.26.30" tag,
+ *   the closest available. A couple of patches behind 1.26.50, so some newer blocks or
+ *   entities may be missing or show as the unknown/error texture client-side.
+ * - biome_definitions.nbt: still from the older "bedrock-1.21.70" tag - BedrockData
+ *   stopped shipping a pre-built raw-NBT biome file in more recent tags (JSON only), and
+ *   converting that JSON into the right NBT shape hasn't been done yet. This one's the
+ *   most likely to be visibly stale of the three.
+ * <p>
+ * canonical_block_states.nbt specifically: every vanilla block state, in a fixed order.
+ * The index a block ends up at here IS its network "runtime ID" - both server and client
+ * build the same table from the same file, so they agree on IDs without the server having
+ * to send one per block.
  * <p>
  * Netherrack only has two blocks implemented, but the full palette still has to be sent
  * (and in the exact order the client expects) since runtime IDs are positions in it, not

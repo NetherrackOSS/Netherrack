@@ -29,14 +29,16 @@ public class WorldManager {
 
         Logger.warn("Level \"" + levelName + "\" not found, generating a new superflat world...");
         WorldGenerator generator = new SuperflatGenerator();
-        createLevelDirectory(levelDir, marker, generator.getId());
-        return new World(levelName, generator);
+        World world = new World(levelName, generator);
+        createLevelDirectory(levelDir, marker, generator.getId(), world);
+        return world;
     }
 
-    private void createLevelDirectory(Path levelDir, Path marker, String generatorId) {
+    private void createLevelDirectory(Path levelDir, Path marker, String generatorId, World world) {
         try {
             Files.createDirectories(levelDir);
             Files.writeString(marker, generatorId);
+            LevelDatWriter.write(levelDir, world);
         } catch (IOException e) {
             Logger.error("Failed to create level directory \"" + levelDir + "\": " + e.getMessage());
         }

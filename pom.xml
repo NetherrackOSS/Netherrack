@@ -72,6 +72,22 @@
             <version>${cloudburst.protocol.version}</version>
         </dependency>
 
+        <!-- Enables ANSI color processing on Windows consoles (cmd.exe/PowerShell), which
+             don't interpret ANSI escape codes by default the way Linux/macOS terminals do.
+             jline-terminal-jni is JLine's own native provider (since 3.24.0, no external
+             Jansi/JNA dependency needed) - the same fix CloudburstMC's own server software
+             uses for this. FFM would be the newer alternative but requires Java 21+; this
+             project targets 17, so JNI is the right one here. -->
+        <dependency>
+            <groupId>org.jline</groupId>
+            <artifactId>jline-terminal</artifactId>
+            <version>3.29.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jline</groupId>
+            <artifactId>jline-terminal-jni</artifactId>
+            <version>3.29.0</version>
+        </dependency>
     </dependencies>
 
     <build>
@@ -111,6 +127,10 @@
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>com.netherrack.server.Netherrack</mainClass>
                                 </transformer>
+                                <!-- JLine discovers its terminal providers (including jline-terminal-jni)
+                                     via META-INF/services; without merging these across jars, shading
+                                     could silently drop the JNI provider's registration. -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
                             </transformers>
                         </configuration>
                     </execution>
