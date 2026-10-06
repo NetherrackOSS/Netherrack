@@ -1,5 +1,6 @@
 package com.netherrack.server.world;
 
+import com.netherrack.server.setup.Lang;
 import com.netherrack.server.util.Logger;
 
 import java.io.IOException;
@@ -23,11 +24,11 @@ public class WorldManager {
 
         if (Files.isDirectory(levelDir) && Files.exists(marker)) {
             String generatorId = readGeneratorId(marker);
-            Logger.info("Loading level \"" + levelName + "\" (generator: " + generatorId + ")...");
+            Logger.info(Lang.current.get("server.loading_level", levelName, generatorId));
             return new World(levelName, resolveGenerator(generatorId));
         }
 
-        Logger.warn("Level \"" + levelName + "\" not found, generating a new superflat world...");
+        Logger.warn(Lang.current.get("server.level_not_found", levelName));
         WorldGenerator generator = new SuperflatGenerator();
         World world = new World(levelName, generator);
         createLevelDirectory(levelDir, marker, generator.getId(), world);

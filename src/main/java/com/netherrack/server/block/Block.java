@@ -7,16 +7,30 @@ package com.netherrack.server.block;
 public class Block {
 
     private final String identifier;
+    private final int blockStateHash;
 
-    public Block(String identifier) {
+    /**
+     * @param blockStateHash the block's network state hash, as Bedrock's "hashed block
+     *                       network IDs" scheme uses - a value computed from the block's
+     *                       NBT state (name + properties), the same way on both client and
+     *                       server, so they agree on identity without needing to share an
+     *                       identically-ordered palette. These are extracted/known values,
+     *                       not something computed here - see Blocks.java for sourcing.
+     */
+    public Block(String identifier, int blockStateHash) {
         this.identifier = identifier;
+        this.blockStateHash = blockStateHash;
     }
 
     /**
-     * The Bedrock namespaced identifier, e.g. "minecraft:grass".
+     * The Bedrock namespaced identifier, e.g. "minecraft:grass_block".
      */
     public String getIdentifier() {
         return identifier;
+    }
+
+    public int getBlockStateHash() {
+        return blockStateHash;
     }
 
     @Override

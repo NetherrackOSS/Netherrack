@@ -1,6 +1,7 @@
 package com.netherrack.server.network;
 
 import com.netherrack.server.block.Block;
+import com.netherrack.server.block.Blocks;
 import com.netherrack.server.world.Chunk;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -33,14 +34,14 @@ public final class ChunkEncoder {
     /**
      * @param subChunkY the subchunk's Y index (world Y divided by 16, floored)
      */
-    public static ByteBuf encodeSubChunk(Chunk chunk, int subChunkY, VanillaData data) {
+    public static ByteBuf encodeSubChunk(Chunk chunk, int subChunkY) {
         ByteBuf buf = Unpooled.buffer();
 
         buf.writeByte(9); // sub-chunk format version
         buf.writeByte(subChunkY);
         buf.writeByte(1); // one block-storage layer (no second "waterlogged" layer)
 
-        writeBlockLayer(buf, chunk, subChunkY, data);
+        writeBlockLayer(buf, chunk, subChunkY);
         writeBiomeLayer(buf);
 
         VarInts.writeUnsignedInt(buf, 0); // border blocks: none
@@ -51,37 +52,39 @@ public final class ChunkEncoder {
         return buf;
     }
 
-    private static void writeBlockLayer(ByteBuf buf, Chunk chunk, int subChunkY, VanillaData data) {
-        int airRuntimeId = data.getRuntimeId("minecraft:air");
+    private static void writeBlockLayer(ByteBuf buf, Chunk chunk, int subChunkY) {
+        int airHash = Blocks.AIR.getBlockStateHash();
 
-        // One runtime ID per of the 4096 positions in this sub-chunk, in x/z/y order
-        // (index = (x << 8) | (z << 4) | y), matching how the client indexes it.
-        int[] runtimeIds = new int[4096];
-        java.util.Map<Integer, Integer> paletteIndexByRuntimeId = new java.util.LinkedHashMap<>();
-        paletteIndexByRuntimeId.put(airRuntimeId, 0);
+        // One block state hash per of the 4096 positions in this sub-chunk, in x/z/y order
+        // (index = (x << 8) | (z << 4) | y), matching how the client indexes it. These are
+        // Bedrock's "hashed block network IDs", not palette-ordinal runtime IDs - see
+        // Block.getBlockStateHash().
+        int[] blockHashes = new int[4096];
+        java.util.Map<Integer, Integer> paletteIndexByHash = new java.util.LinkedHashMap<>();
+        paletteIndexByHash.put(airHash, 0);
 
         int worldYBase = subChunkY * 16;
         for (int x = 0; x < 16; x++) {
             for (int z = 0; z < 16; z++) {
                 for (int y = 0; y < 16; y++) {
                     Block block = chunk.getBlock(x, worldYBase + y, z);
-                    int runtimeId = block != null ? data.getRuntimeId(block.getIdentifier()) : airRuntimeId;
+                    int hash = block != null ? block.getBlockStateHash() : airHash;
                     int index = (x << 8) | (z << 4) | y;
-                    runtimeIds[index] = paletteIndexByRuntimeId.computeIfAbsent(runtimeId, id -> paletteIndexByRuntimeId.size());
+                    blockHashes[index] = paletteIndexByHash.computeIfAbsent(hash, id -> paletteIndexByHash.size());
                 }
             }
         }
 
-        int paletteSize = paletteIndexByRuntimeId.size();
+        int paletteSize = paletteIndexByHash.size();
         int bitsPerBlock = bitsNeededFor(paletteSize);
 
         buf.writeByte((bitsPerBlock << 1) | 1); // low bit set = palette is a runtime-ID palette
 
-        writePackedIndices(buf, runtimeIds, bitsPerBlock);
+        writePackedIndices(buf, blockHashes, bitsPerBlock);
 
         VarInts.writeInt(buf, paletteSize);
-        for (int runtimeId : paletteIndexByRuntimeId.keySet()) {
-            VarInts.writeInt(buf, runtimeId);
+        for (int hash : paletteIndexByHash.keySet()) {
+            VarInts.writeInt(buf, hash);
         }
     }
 

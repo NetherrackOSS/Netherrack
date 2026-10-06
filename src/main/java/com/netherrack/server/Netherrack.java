@@ -1,6 +1,12 @@
 package com.netherrack.server;
 
+import com.netherrack.server.command.CommandManager;
+import com.netherrack.server.command.HelpCommand;
+import com.netherrack.server.command.StopCommand;
+import com.netherrack.server.command.VersionCommand;
 import com.netherrack.server.network.RakNetServer;
+import com.netherrack.server.setup.Lang;
+import com.netherrack.server.setup.SetupWizard;
 import com.netherrack.server.util.AnsiSupport;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.world.World;
@@ -8,6 +14,7 @@ import com.netherrack.server.world.WorldManager;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 public class Netherrack {
@@ -17,6 +24,7 @@ public class Netherrack {
     private final ServerConfig config;
     private final RakNetServer rakNetServer;
     private final WorldManager worldManager;
+    private final CommandManager commandManager;
     private World world;
     private volatile boolean running = true;
 
@@ -24,6 +32,15 @@ public class Netherrack {
         this.config = new ServerConfig(Path.of("server.properties"));
         this.rakNetServer = new RakNetServer(config);
         this.worldManager = new WorldManager();
+
+        this.commandManager = new CommandManager();
+        commandManager.register(new StopCommand());
+        commandManager.register(new VersionCommand());
+        commandManager.register(new HelpCommand());
+    }
+
+    public CommandManager getCommandManager() {
+        return commandManager;
     }
 
     public static void main(String[] args) {
@@ -32,9 +49,29 @@ public class Netherrack {
     }
 
     private void start() {
+        // Printed before a language is known either way, same as the wizard's own first
+        // screen - there's nothing to translate it into yet.
         Logger.info("Starting Netherrack server version " + VERSION);
 
-        config.load();
+        String language = Lang.DEFAULT_CODE;
+        if (!Files.exists(Path.of("server.properties"))) {
+            Logger.info("First-time setup detected. Launching setup wizard...");
+            String chosen = new SetupWizard().run();
+            if (chosen == null) {
+                Logger.error("Setup wizard did not accept the license. Startup has been cancelled.");
+                System.exit(1);
+                return;
+            }
+            language = chosen;
+        }
+
+        // Set before config.load() too, so messages like "server.properties not found"
+        // (logged from inside that call, on a first run) are already in the right language.
+        Lang.current = new Lang(language);
+
+        config.load(language);
+        Lang.current = new Lang(config.get("language", language));
+        Lang lang = Lang.current;
 
         String ip = config.get("server-ip", "0.0.0.0");
         int port = config.getInt("server-port", 19132);
@@ -42,23 +79,23 @@ public class Netherrack {
         int maxPlayers = config.getInt("max-players", 20);
 
         sleep(150);
-        Logger.info("Preparing level \"" + levelName + "\"...");
+        Logger.info(lang.get("server.preparing_level", levelName));
         world = worldManager.loadOrCreate(levelName);
         world.getChunk(0, 0);
 
         sleep(150);
-        Logger.info("Opening server on " + ip + ":" + port + "...");
+        Logger.info(lang.get("server.opening", ip, port));
         rakNetServer.start(world);
 
         sleep(150);
-        Logger.info("This is an early build; no plugin API yet.");
+        Logger.info(lang.get("server.early_build"));
 
         sleep(300);
-        Logger.info("Preparing spawn area...");
+        Logger.info(lang.get("server.preparing_spawn"));
 
         sleep(300);
-        Logger.info("Server thread/Netherrack is now running.");
-        Logger.info("Done! Max players: " + maxPlayers + ". Type \"help\" for a list of commands.");
+        Logger.info(lang.get("server.thread_running"));
+        Logger.info(lang.get("server.done", maxPlayers));
 
         runConsoleLoop();
     }
@@ -75,40 +112,20 @@ public class Netherrack {
                 if (line == null) {
                     continue;
                 }
-                handleCommand(line.trim());
+                commandManager.dispatch(this, line.trim());
             }
         } catch (Exception e) {
             Logger.error("Console loop terminated: " + e.getMessage());
         }
     }
 
-    private void handleCommand(String command) {
-        if (command.isEmpty()) {
-            return;
-        }
-
-        switch (command.toLowerCase()) {
-            case "stop" -> shutdown();
-            case "version" -> Logger.info("Netherrack version " + VERSION + " (simulation build)");
-            case "help", "?" -> printHelp();
-            default -> Logger.info("Unknown command: \"" + command + "\". Type \"help\" or \"?\" for a list of commands.");
-        }
-    }
-
-    private void printHelp() {
-        Logger.info("Available commands:");
-        Logger.info("stop - Stops the server");
-        Logger.info("version - Shows the server version");
-        Logger.info("help, ? - Shows this list of commands");
-    }
-
-    private void shutdown() {
-        Logger.info("Stopping the server...");
+    public void shutdown() {
+        Logger.info(Lang.current.get("server.stopping"));
         sleep(200);
-        Logger.info("Saving level \"" + config.get("level-name", "world") + "\"...");
+        Logger.info(Lang.current.get("server.saving_level", config.get("level-name", "world")));
         rakNetServer.stop();
         sleep(200);
-        Logger.info("Server closed.");
+        Logger.info(Lang.current.get("server.closed"));
         running = false;
         System.exit(0);
     }

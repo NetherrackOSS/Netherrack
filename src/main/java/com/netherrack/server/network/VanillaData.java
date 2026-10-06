@@ -30,13 +30,15 @@ import java.util.Map;
  *   most likely to be visibly stale of the three.
  * <p>
  * canonical_block_states.nbt specifically: every vanilla block state, in a fixed order.
- * The index a block ends up at here IS its network "runtime ID" - both server and client
- * build the same table from the same file, so they agree on IDs without the server having
- * to send one per block.
+ * StartGame's blockPalette field is set from this, though it turns out that field isn't
+ * actually transmitted at all for this protocol version (confirmed by reading the active
+ * serializer chain) - harmless to still set, just inert.
  * <p>
- * Netherrack only has two blocks implemented, but the full palette still has to be sent
- * (and in the exact order the client expects) since runtime IDs are positions in it, not
- * ids we get to choose ourselves.
+ * Block identity on the wire now uses Bedrock's hashed block network IDs scheme instead
+ * (see Block.getBlockStateHash()), not ordinal positions in this palette - that's why
+ * getRuntimeId() below is unused. Hashing avoids needing this file's ordering to exactly
+ * match the real client's version-for-version, which ordinal IDs required and which an
+ * older BedrockData snapshot (1.26.30 vs the client's actual 1.26.50) couldn't guarantee.
  */
 public final class VanillaData {
 

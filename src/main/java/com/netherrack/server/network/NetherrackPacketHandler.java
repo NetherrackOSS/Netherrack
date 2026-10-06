@@ -20,11 +20,16 @@ import org.cloudburstmc.protocol.bedrock.data.PacketCompressionAlgorithm;
 import org.cloudburstmc.protocol.bedrock.data.PlayerPermission;
 import org.cloudburstmc.protocol.bedrock.data.SpawnBiomeType;
 import org.cloudburstmc.protocol.bedrock.data.WorldType;
+import org.cloudburstmc.nbt.NbtMap;
 import org.cloudburstmc.protocol.bedrock.packet.AvailableEntityIdentifiersPacket;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacketHandler;
 import org.cloudburstmc.protocol.bedrock.packet.ChunkRadiusUpdatedPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ClientToServerHandshakePacket;
 import org.cloudburstmc.protocol.bedrock.packet.CompressedBiomeDefinitionListPacket;
+import org.cloudburstmc.protocol.bedrock.packet.CraftingDataPacket;
+import org.cloudburstmc.protocol.bedrock.packet.CreativeContentPacket;
+import org.cloudburstmc.protocol.bedrock.packet.DimensionDataPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ItemComponentPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LevelChunkPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LoginPacket;
 import org.cloudburstmc.protocol.bedrock.packet.NetworkChunkPublisherUpdatePacket;
@@ -38,6 +43,8 @@ import org.cloudburstmc.protocol.bedrock.packet.ResourcePackStackPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ResourcePacksInfoPacket;
 import org.cloudburstmc.protocol.bedrock.packet.SetLocalPlayerAsInitializedPacket;
 import org.cloudburstmc.protocol.bedrock.packet.StartGamePacket;
+import org.cloudburstmc.protocol.bedrock.packet.SyncEntityPropertyPacket;
+import org.cloudburstmc.protocol.bedrock.packet.TrimDataPacket;
 import org.cloudburstmc.protocol.bedrock.util.ChainValidationResult;
 import org.cloudburstmc.protocol.bedrock.util.EncryptionUtils;
 import org.cloudburstmc.protocol.common.PacketSignal;
@@ -53,9 +60,10 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Drives one player's login sequence:
  * RequestNetworkSettings -> NetworkSettings -> Login -> PlayStatus(LOGIN_SUCCESS)
- * -> ResourcePacksInfo -> ResourcePackClientResponse -> ResourcePackStack -> StartGame
- * -> CompressedBiomeDefinitionList -> AvailableEntityIdentifiers -> RequestChunkRadius
- * -> ChunkRadiusUpdated -> LevelChunk(s) -> NetworkChunkPublisherUpdate
+ * -> ResourcePacksInfo -> ResourcePackClientResponse -> ResourcePackStack -> DimensionData
+ * -> StartGame -> CompressedBiomeDefinitionList -> AvailableEntityIdentifiers
+ * -> ItemComponent -> CreativeContent -> SyncEntityProperty -> CraftingData -> TrimData
+ * -> RequestChunkRadius -> ChunkRadiusUpdated -> LevelChunk(s) -> NetworkChunkPublisherUpdate
  * -> SetLocalPlayerAsInitialized -> PlayStatus(PLAYER_SPAWN)
  * <p>
  * Targets Bedrock_v2193 (1.26.50) because that's what the real client actually speaks on
@@ -79,6 +87,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
     private volatile String username;
     private volatile String uuid;
+    private volatile boolean awaitingHandshakeAck;
     private volatile Vector3f spawnPosition;
 
     public NetherrackPacketHandler(BedrockServerSession session, World world) {
@@ -138,7 +147,14 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
                 // Hellman handshake before anything past login will work - if we skip it,
                 // the client starts expecting an encrypted stream that never comes, and
                 // just silently stalls (no error either side) rather than disconnecting.
+                // completeLogin() is deferred to handle(ClientToServerHandshakePacket) below
+                // rather than called right after this - waiting for the client's actual ack
+                // instead of assuming ordered delivery makes that safe. Flag is only set
+                // once the handshake packet actually sent without throwing - if it throws,
+                // we fall through to completeLogin() below same as an unsigned login, rather
+                // than leaving the connection stuck waiting for an ack that'll never come.
                 beginEncryptionHandshake(identityClaims);
+                awaitingHandshakeAck = true;
             }
         } catch (Exception e) {
             Logger.warn("Failed to validate the login chain, falling back to a random profile: " + e.getMessage());
@@ -151,7 +167,9 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             username = "Player" + ThreadLocalRandom.current().nextInt(1000, 9999);
         }
 
-        completeLogin();
+        if (!awaitingHandshakeAck) {
+            completeLogin();
+        }
         return PacketSignal.HANDLED;
     }
 
@@ -170,24 +188,29 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         KeyPair serverKeyPair = EncryptionUtils.createKeyPair();
         byte[] token = EncryptionUtils.generateRandomToken();
 
-        SecretKey secretKey = EncryptionUtils.getSecretKey(
-                serverKeyPair.getPrivate(), identityClaims.parsedIdentityPublicKey(), token);
-        session.enableEncryption(secretKey);
-
+        // Order matters here: send the (plaintext, @NoEncryption) handshake packet BEFORE
+        // flipping encryption on, not after. This matches AllayMC's proven-working sequence
+        // rather than the reverse order used previously.
         ServerToClientHandshakePacket handshake = new ServerToClientHandshakePacket();
         handshake.setJwt(EncryptionUtils.createHandshakeJwt(serverKeyPair, token));
         session.sendPacketImmediately(handshake);
+
+        SecretKey secretKey = EncryptionUtils.getSecretKey(
+                serverKeyPair.getPrivate(), identityClaims.parsedIdentityPublicKey(), token);
+        session.enableEncryption(secretKey);
 
         Logger.info("Sent the encryption handshake packet to " + username + ", waiting for its response...");
     }
 
     @Override
     public PacketSignal handle(ClientToServerHandshakePacket packet) {
-        // Acknowledges the client finished deriving its half of the shared secret. We don't
-        // actually need to wait for this before continuing (RakNet delivers in order, so the
-        // client has already processed our handshake packet by the time anything encrypted
-        // reaches it), but handling it explicitly avoids it falling through to UNHANDLED.
+        // Acknowledges the client finished deriving its half of the shared secret and
+        // switched its own pipeline to decrypt from here on - this is what completeLogin()
+        // was waiting on, since sending encrypted packets before this arrives risks the
+        // client not being ready to decrypt them yet.
         Logger.info("Player " + username + " acknowledged the encryption handshake.");
+        awaitingHandshakeAck = false;
+        completeLogin();
         return PacketSignal.HANDLED;
     }
 
@@ -266,6 +289,12 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
     }
 
     private void sendStartGame() {
+        // Must be sent before StartGame, not after - AllayMC's own comment on the
+        // equivalent code is explicit that chunks get ignored and the client can't join
+        // without this preceding it. Empty definitions list: the client already assumes
+        // minecraft:overworld exists by default, we're not adding any custom dimensions.
+        session.sendPacket(new DimensionDataPacket());
+
         StartGamePacket startGame = new StartGamePacket();
 
         startGame.setUniqueEntityId(runtimeEntityId);
@@ -340,7 +369,13 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         startGame.setEditorWorldType(WorldType.NON_EDITOR);
         startGame.setClientSideGenerationEnabled(false);
         startGame.setEmoteChatMuted(false);
-        startGame.setBlockNetworkIdsHashed(false); // runtime IDs are palette indices, not state hashes
+        // Hashed scheme: block identity is the hash of each block's own NBT state, computed
+        // the same way on both ends, rather than an index into a palette whose ordering has
+        // to exactly match the client's internal table version-for-version. AllayMC (a real,
+        // working server on this same library) uses this too - switched to it after an
+        // ordinal-index mismatch against our 1.26.30 data caused clients to disconnect with
+        // a generic "Block" error on first receiving chunk data.
+        startGame.setBlockNetworkIdsHashed(true);
         startGame.setCreatedInEditor(false);
         startGame.setExportedFromEditor(false);
         startGame.setNetworkPermissions(NetworkPermissions.DEFAULT);
@@ -358,6 +393,27 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         AvailableEntityIdentifiersPacket entities = new AvailableEntityIdentifiersPacket();
         entities.setIdentifiers(vanillaData.getEntityIdentifiers());
         session.sendPacket(entities);
+
+        // The rest of these are part of the standard join sequence real clients expect to
+        // see regardless of whether a server actually has anything custom to put in them -
+        // all empty/default here since Netherrack doesn't have custom items, crafting
+        // recipes, armor trims, or entity properties yet. Every list field on these packet
+        // classes already defaults to an empty list except SyncEntityPropertyPacket's
+        // NbtMap, which needs setting explicitly or risks the same null-field encoder
+        // crash the worldTemplateId bug was.
+        session.sendPacket(new ItemComponentPacket());
+        session.sendPacket(new CreativeContentPacket());
+
+        SyncEntityPropertyPacket entityProperties = new SyncEntityPropertyPacket();
+        entityProperties.setData(NbtMap.EMPTY);
+        session.sendPacket(entityProperties);
+
+        // cleanRecipes left false (the default) deliberately - true would clear the
+        // client's own built-in vanilla recipes, and we have nothing to replace them with
+        // yet, which would leave the player unable to craft anything at all.
+        session.sendPacket(new CraftingDataPacket());
+
+        session.sendPacket(new TrimDataPacket());
     }
 
     private void sendChunks(int radius) {
@@ -376,7 +432,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
         // Only sub-chunk 0 (world Y 0-15) - everything Netherrack currently generates
         // (the single grass layer) fits inside it.
-        ByteBuf subChunk = ChunkEncoder.encodeSubChunk(chunk, 0, vanillaData);
+        ByteBuf subChunk = ChunkEncoder.encodeSubChunk(chunk, 0);
 
         LevelChunkPacket packet = new LevelChunkPacket();
         packet.setChunkX(chunkX);

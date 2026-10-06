@@ -1,5 +1,6 @@
 package com.netherrack.server;
 
+import com.netherrack.server.setup.Lang;
 import com.netherrack.server.util.Logger;
 
 import java.io.IOException;
@@ -18,10 +19,14 @@ public class ServerConfig {
         this.path = path;
     }
 
-    public void load() {
+    /**
+     * @param language language code to save into a brand-new server.properties (e.g. the one
+     *                 just picked in the setup wizard). Ignored if the file already exists.
+     */
+    public void load(String language) {
         if (!Files.exists(path)) {
-            Logger.warn("server.properties not found, creating default configuration...");
-            writeDefaults();
+            Logger.warn(Lang.current.get("server.config_missing"));
+            writeDefaults(language);
         }
         try (InputStream in = Files.newInputStream(path)) {
             properties.load(in);
@@ -30,7 +35,7 @@ public class ServerConfig {
         }
     }
 
-    private void writeDefaults() {
+    private void writeDefaults(String language) {
         properties.setProperty("server-name", "Netherrack Server");
         properties.setProperty("server-ip", "0.0.0.0");
         properties.setProperty("server-port", "19132");
@@ -40,6 +45,7 @@ public class ServerConfig {
         properties.setProperty("level-name", "world");
         properties.setProperty("view-distance", "10");
         properties.setProperty("online-mode", "true");
+        properties.setProperty("language", language);
 
         try (OutputStream out = Files.newOutputStream(path)) {
             properties.store(out, "Netherrack server configuration");
