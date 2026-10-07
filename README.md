@@ -21,6 +21,45 @@ Netherrack is an experimental vibe coded Minecraft: Bedrock Edition server softw
 > [!IMPORTANT]
 > Netherrack is not afilliated with Mojang or Microsoft.
 
+# 🛠️ Getting started
+Netherrack is written and running in Java 17. So you need to install Java 17 or newer. After you've installed Java 17 or newer, there is currently one way to install Netherrack.
+
+## 🔧 Compiling from source
+To compile Netherrack from source, you'll need:
+- Git
+- Maven 3 or newer
+- Java 17 or newer
+
+Run these commands in your terminal or command prompt:
+```
+git clone https://github.com/NetherrackOSS/Netherrack
+cd Netherrack
+mvn clean package
+```
+
+After running ``mvn clean package``, the Java archive file should be located at the ``target`` directory of the source code.
+
+After running ``java -jar netherrack-0.1.0-SNAPSHOT.jar`` or launching it via a start script for the first time, you should see something like this:
+
+```
+[16:01:07] [main] [INFO] Starting Netherrack server version 0.1.0
+[16:01:07] [main] [INFO] First-time setup detected. Launching setup wizard...
+
+═══════════════════════════════════════════════════════════════
+         Netherrack Setup Wizard - Language Selection
+═══════════════════════════════════════════════════════════════
+
+Welcome! Please select a language first.
+
+[*] Enter a language code from the list below (press Enter for default).
+  [en-US] English (United States)
+  [pt-BR] Português (Brasil)
+
+» Language [en-US]: 
+```
+
+> Encountering issues? Ensure Java 17 or newer is installed (run ``java --version`` on your terminal or command prompt to check your Java version) and that port 19132 isn't already in use.
+
 ## 🚧 Current status
 
 Netherrack is currently in **early development**.
