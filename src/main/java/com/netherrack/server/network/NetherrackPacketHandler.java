@@ -28,6 +28,7 @@ import org.cloudburstmc.protocol.bedrock.packet.ClientToServerHandshakePacket;
 import org.cloudburstmc.protocol.bedrock.packet.CompressedBiomeDefinitionListPacket;
 import org.cloudburstmc.protocol.bedrock.packet.CraftingDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.CreativeContentPacket;
+import org.cloudburstmc.protocol.bedrock.data.definitions.DimensionDefinition;
 import org.cloudburstmc.protocol.bedrock.packet.DimensionDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ItemComponentPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LevelChunkPacket;
@@ -291,9 +292,20 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
     private void sendStartGame() {
         // Must be sent before StartGame, not after - AllayMC's own comment on the
         // equivalent code is explicit that chunks get ignored and the client can't join
-        // without this preceding it. Empty definitions list: the client already assumes
-        // minecraft:overworld exists by default, we're not adding any custom dimensions.
-        session.sendPacket(new DimensionDataPacket());
+        // without this preceding it.
+        //
+        // Explicitly declaring a 0-256 height range (the classic pre-1.18 Bedrock height,
+        // 16 sub-chunks) rather than leaving this empty - an empty definitions list means
+        // the client falls back to its own default modern overworld bounds (-64 to 319),
+        // which uses a completely different chunk-loading protocol (the client requests
+        // individual sub-chunks via SubChunkRequestPacket) than the single-packet, inline
+        // sub-chunk model (LevelChunkPacket.subChunksLength) Netherrack currently sends
+        // chunks with. That mismatch is almost certainly what the client's "Block" error
+        // was actually about - not the block identity scheme itself.
+        DimensionDataPacket dimensionData = new DimensionDataPacket();
+        dimensionData.getDefinitions().add(
+                new DimensionDefinition("minecraft:overworld", 256, 0, 2, 0, null, "minecraft:plains"));
+        session.sendPacket(dimensionData);
 
         StartGamePacket startGame = new StartGamePacket();
 
