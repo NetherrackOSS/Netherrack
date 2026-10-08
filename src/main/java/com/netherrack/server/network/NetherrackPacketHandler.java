@@ -30,6 +30,8 @@ import org.cloudburstmc.protocol.bedrock.packet.CraftingDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.CreativeContentPacket;
 import org.cloudburstmc.protocol.bedrock.data.definitions.DimensionDefinition;
 import org.cloudburstmc.protocol.bedrock.packet.DimensionDataPacket;
+import org.cloudburstmc.protocol.bedrock.packet.JigsawStructureDataPacket;
+import org.cloudburstmc.protocol.bedrock.packet.VoxelShapesPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ItemComponentPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LevelChunkPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LoginPacket;
@@ -54,6 +56,7 @@ import org.cloudburstmc.protocol.common.util.OptionalBoolean;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
+import java.util.Collections;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
@@ -61,7 +64,8 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Drives one player's login sequence:
  * RequestNetworkSettings -> NetworkSettings -> Login -> PlayStatus(LOGIN_SUCCESS)
- * -> ResourcePacksInfo -> ResourcePackClientResponse -> ResourcePackStack -> DimensionData
+ * -> ResourcePacksInfo -> ResourcePackClientResponse -> ResourcePackStack
+ * -> JigsawStructureData -> VoxelShapes -> DimensionData
  * -> StartGame -> CompressedBiomeDefinitionList -> AvailableEntityIdentifiers
  * -> ItemComponent -> CreativeContent -> SyncEntityProperty -> CraftingData -> TrimData
  * -> RequestChunkRadius -> ChunkRadiusUpdated -> LevelChunk(s) -> NetworkChunkPublisherUpdate
@@ -290,6 +294,23 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
     }
 
     private void sendStartGame() {
+        // Both of these must also be sent before StartGame (confirmed by Nukkit's and
+        // AllayMC's own join sequences, and by VoxelShapesPacket's own class doc comment:
+        // "This packet should always be sent before StartGamePacket"). We'd never sent
+        // either at all - missing shape data specifically could easily be why the client's
+        // own block-shape lookups were failing with a "Block"-category error regardless of
+        // whether any chunks were ever sent, since the table they'd resolve against was
+        // never populated in the first place.
+        JigsawStructureDataPacket jigsawData = new JigsawStructureDataPacket();
+        jigsawData.setJigsawStructureDataTag(NbtMap.EMPTY);
+        session.sendPacket(jigsawData);
+
+        VoxelShapesPacket voxelShapes = new VoxelShapesPacket();
+        voxelShapes.setShapes(Collections.emptyList());
+        voxelShapes.setNameMap(Collections.emptyMap());
+        voxelShapes.setCustomShapeCount(0);
+        session.sendPacket(voxelShapes);
+
         // Must be sent before StartGame, not after - AllayMC's own comment on the
         // equivalent code is explicit that chunks get ignored and the client can't join
         // without this preceding it.
