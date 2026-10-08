@@ -2,8 +2,8 @@ package com.netherrack.server.world;
 
 import com.netherrack.server.block.Block;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * A single world/dimension. Chunks are generated on demand (the first time they're
@@ -15,7 +15,9 @@ public class World {
 
     private final String name;
     private final WorldGenerator generator;
-    private final Map<Long, Chunk> chunks = new HashMap<>();
+    // Concurrent since each player's packets are handled on their own network thread,
+    // so two players can ask for (and generate) chunks at the same time.
+    private final Map<Long, Chunk> chunks = new ConcurrentHashMap<>();
 
     public World(String name, WorldGenerator generator) {
         this.name = name;
