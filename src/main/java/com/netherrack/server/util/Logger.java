@@ -1,5 +1,10 @@
 package com.netherrack.server.util;
 
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 
@@ -9,6 +14,11 @@ import java.time.format.DateTimeFormatter;
  * <p>
  * Brackets are left in the default terminal color; only the content inside
  * each segment (timestamp, thread name, level) is colored.
+ * <p>
+ * Every line is also written, uncolored, to a log file once {@link #openLogFile(Path)} has
+ * been called. DEBUG lines go only to that file: with debug=true the network libraries log
+ * every packet, which buries everything else on the console and scrolls past what the
+ * console keeps.
  */
 public final class Logger {
 
@@ -24,6 +34,7 @@ public final class Logger {
 
     private static volatile Thread consoleThread = null;
     private static volatile boolean promptActive = false;
+    private static PrintWriter logFile = null;
 
     private Logger() {
     }
@@ -53,6 +64,19 @@ public final class Logger {
         promptActive = false;
     }
 
+    /**
+     * Starts copying every log line into the given file, replacing whatever a previous run
+     * left there. Failing to open it isn't fatal - the console still works.
+     */
+    public static synchronized void openLogFile(Path path) {
+        try {
+            Files.createDirectories(path.toAbsolutePath().getParent());
+            logFile = new PrintWriter(Files.newBufferedWriter(path, StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            error("Could not open log file " + path + ": " + e.getMessage());
+        }
+    }
+
     public static void info(String message) {
         log("INFO", message, INFO_COLOR);
     }
@@ -69,9 +93,20 @@ public final class Logger {
         log("DEBUG", message, DEBUG_COLOR);
     }
 
-    private static void log(String level, String message, String levelColor) {
+    // Synchronized since Netty's threads log concurrently with the main thread, and both
+    // the console prompt handling and the file writer need whole lines at a time.
+    private static synchronized void log(String level, String message, String levelColor) {
         String time = LocalTime.now().format(TIME_FORMAT);
         String thread = Thread.currentThread().getName();
+
+        if (logFile != null) {
+            logFile.println("[" + time + "] [" + thread + "] [" + level + "] " + message);
+            // Flushed per line so the file is complete even if the server is killed or crashes.
+            logFile.flush();
+        }
+        if (level.equals("DEBUG")) {
+            return;
+        }
 
         StringBuilder line = new StringBuilder();
         line.append('[').append(TIMESTAMP_COLOR).append(time).append(RESET).append(']');
