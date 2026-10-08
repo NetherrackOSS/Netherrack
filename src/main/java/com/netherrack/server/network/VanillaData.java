@@ -5,12 +5,21 @@ import org.cloudburstmc.nbt.NbtList;
 import org.cloudburstmc.nbt.NbtMap;
 import org.cloudburstmc.nbt.NbtType;
 import org.cloudburstmc.nbt.NbtUtils;
+import org.cloudburstmc.protocol.bedrock.data.biome.BiomeDefinitionData;
+import org.cloudburstmc.protocol.bedrock.data.biome.BiomeDefinitions;
+import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
+import org.cloudburstmc.protocol.bedrock.data.definitions.SimpleItemDefinition;
+import org.cloudburstmc.protocol.bedrock.data.inventory.ItemVersion;
+import org.cloudburstmc.protocol.common.DefinitionRegistry;
+import org.cloudburstmc.protocol.common.SimpleDefinitionRegistry;
 
+import java.awt.Color;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PushbackInputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -27,7 +36,14 @@ import java.util.Map;
  * - biome_definitions.nbt: still from the older "bedrock-1.21.70" tag - BedrockData
  *   stopped shipping a pre-built raw-NBT biome file in more recent tags (JSON only), and
  *   converting that JSON into the right NBT shape hasn't been done yet. This one's the
- *   most likely to be visibly stale of the three.
+ *   most likely to be visibly stale of the three. The protocol no longer takes this NBT
+ *   as-is either (CompressedBiomeDefinitionListPacket was dropped from the codec), so it's
+ *   converted into the structured BiomeDefinitionListPacket form on load.
+ * - item_definitions.nbt: every vanilla item's network id, version and (for data-driven
+ *   items) components, converted from the "bedrock-1.26.30" tag's required_item_list.json
+ *   into the same network NBT form as the files above ({"items": [{name, id, version,
+ *   component_based, components?}]}), so it can be read without a JSON library. Clients
+ *   no longer have a built-in item list; this is what fills it.
  * <p>
  * canonical_block_states.nbt specifically: every vanilla block state, in a fixed order.
  * StartGame's blockPalette field is set from this, though it turns out that field isn't
@@ -45,18 +61,24 @@ public final class VanillaData {
     private static final String BLOCK_STATES_RESOURCE = "/data/canonical_block_states.nbt";
     private static final String ENTITY_IDENTIFIERS_RESOURCE = "/data/entity_identifiers.nbt";
     private static final String BIOME_DEFINITIONS_RESOURCE = "/data/biome_definitions.nbt";
+    private static final String ITEM_DEFINITIONS_RESOURCE = "/data/item_definitions.nbt";
 
     private static volatile VanillaData instance;
 
     private final NbtList<NbtMap> blockPalette;
     private final NbtMap entityIdentifiers;
-    private final NbtMap biomeDefinitions;
+    private final BiomeDefinitions biomeDefinitions;
+    private final List<ItemDefinition> itemDefinitions;
+    private final DefinitionRegistry<ItemDefinition> itemRegistry;
     private final Map<String, Integer> runtimeIdsByName = new HashMap<>();
 
-    private VanillaData(NbtList<NbtMap> blockPalette, NbtMap entityIdentifiers, NbtMap biomeDefinitions) {
+    private VanillaData(NbtList<NbtMap> blockPalette, NbtMap entityIdentifiers, BiomeDefinitions biomeDefinitions,
+                        List<ItemDefinition> itemDefinitions) {
         this.blockPalette = blockPalette;
         this.entityIdentifiers = entityIdentifiers;
         this.biomeDefinitions = biomeDefinitions;
+        this.itemDefinitions = itemDefinitions;
+        this.itemRegistry = SimpleDefinitionRegistry.<ItemDefinition>builder().addAll(itemDefinitions).build();
 
         for (int i = 0; i < blockPalette.size(); i++) {
             String name = blockPalette.get(i).getString("name");
@@ -87,8 +109,18 @@ public final class VanillaData {
         return entityIdentifiers;
     }
 
-    public NbtMap getBiomeDefinitions() {
+    public BiomeDefinitions getBiomeDefinitions() {
         return biomeDefinitions;
+    }
+
+    /** Every vanilla item, in the form ItemComponentPacket sends them to the client. */
+    public List<ItemDefinition> getItemDefinitions() {
+        return itemDefinitions;
+    }
+
+    /** The same items as a lookup the codec uses to decode item stacks in client packets. */
+    public DefinitionRegistry<ItemDefinition> getItemRegistry() {
+        return itemRegistry;
     }
 
     /**
@@ -108,8 +140,54 @@ public final class VanillaData {
     private static VanillaData load() {
         NbtList<NbtMap> blockPalette = readRepeatedCompounds(BLOCK_STATES_RESOURCE);
         NbtMap entityIdentifiers = readSingleCompound(ENTITY_IDENTIFIERS_RESOURCE);
-        NbtMap biomeDefinitions = readSingleCompound(BIOME_DEFINITIONS_RESOURCE);
-        return new VanillaData(blockPalette, entityIdentifiers, biomeDefinitions);
+        BiomeDefinitions biomeDefinitions = toBiomeDefinitions(readSingleCompound(BIOME_DEFINITIONS_RESOURCE));
+        List<ItemDefinition> itemDefinitions = toItemDefinitions(readSingleCompound(ITEM_DEFINITIONS_RESOURCE));
+        return new VanillaData(blockPalette, entityIdentifiers, biomeDefinitions, itemDefinitions);
+    }
+
+    private static List<ItemDefinition> toItemDefinitions(NbtMap root) {
+        List<ItemDefinition> definitions = new ArrayList<>();
+        for (NbtMap item : root.getList("items", NbtType.COMPOUND)) {
+            definitions.add(new SimpleItemDefinition(
+                    item.getString("name"),
+                    item.getInt("id"),
+                    ItemVersion.from(item.getInt("version")),
+                    item.getBoolean("component_based"),
+                    item.getCompound("components", NbtMap.EMPTY)));
+        }
+        return List.copyOf(definitions);
+    }
+
+    /**
+     * Converts the legacy biome NBT (one compound per biome name) into the structured form
+     * BiomeDefinitionListPacket carries. The id is left null: that field is only for custom
+     * biomes, the client already knows vanilla biomes' numeric ids by name. The legacy
+     * "height" field is what the structured form calls "scale".
+     */
+    private static BiomeDefinitions toBiomeDefinitions(NbtMap legacy) {
+        Map<String, BiomeDefinitionData> definitions = new LinkedHashMap<>();
+        legacy.forEach((name, value) -> {
+            NbtMap biome = (NbtMap) value;
+            Color waterColor = new Color(
+                    biome.getFloat("waterColorR"), biome.getFloat("waterColorG"),
+                    biome.getFloat("waterColorB"), biome.getFloat("waterColorA"));
+            definitions.put(name, new BiomeDefinitionData(
+                    null,
+                    biome.getFloat("temperature"),
+                    biome.getFloat("downfall"),
+                    biome.getFloat("red_spores"),
+                    biome.getFloat("blue_spores"),
+                    biome.getFloat("ash"),
+                    biome.getFloat("white_ash"),
+                    0f, // foliage snow: not in the legacy data
+                    biome.getFloat("depth"),
+                    biome.getFloat("height"),
+                    waterColor,
+                    biome.getBoolean("rain"),
+                    biome.getList("tags", NbtType.STRING),
+                    null));
+        });
+        return new BiomeDefinitions(definitions);
     }
 
     @SuppressWarnings("unchecked")

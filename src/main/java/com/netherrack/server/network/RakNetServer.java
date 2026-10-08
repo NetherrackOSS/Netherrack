@@ -2,6 +2,7 @@ package com.netherrack.server.network;
 
 import com.netherrack.server.ServerConfig;
 import com.netherrack.server.util.Logger;
+import com.netherrack.server.util.NettyLogBridge;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
@@ -66,6 +67,10 @@ public class RakNetServer {
                     protected void initSession(BedrockServerSession session) {
                         InetSocketAddress remote = (InetSocketAddress) session.getSocketAddress();
                         Logger.info("Incoming RakNet connection from " + remote.getAddress().getHostAddress() + ":" + remote.getPort());
+
+                        // Logs every packet in and out of this session (at trace level, so
+                        // only visible with debug=true).
+                        session.setLogging(NettyLogBridge.isDebug());
 
                         NetherrackPacketHandler handler = new NetherrackPacketHandler(session, world);
                         session.setPacketHandler(handler);

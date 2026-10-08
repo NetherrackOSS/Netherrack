@@ -10,20 +10,28 @@ import org.cloudburstmc.protocol.common.util.VarInts;
 /**
  * Encodes a Chunk into the raw bytes LevelChunkPacket carries in its "data" field - the
  * library doesn't do this part for you, there's no chunk/block-storage helper in Protocol,
- * so this follows Bedrock's own binary sub-chunk format by hand:
+ * so this follows Bedrock's own binary chunk format by hand:
  * <p>
- * Per sub-chunk: version byte (9, the modern format with an explicit Y index, so sub-chunks
- * don't have to be contiguous from the bottom of the world) -> signed Y index -> storage
- * layer count (always 1 here, no "waterlogged" second layer) -> one block-storage layer
- * (palette + bit-packed indices) -> one biome-storage layer (same shape, biome IDs instead
- * of block runtime IDs).
+ * Every sub-chunk in the dimension, bottom to top -> one biome-storage section per
+ * sub-chunk -> border block count (always 0).
  * <p>
- * This is the single riskiest hand-written part of Netherrack's protocol support - it was
- * written from protocol documentation/knowledge rather than verified against a real client,
- * since there's no way to test it in this environment. If a client disconnects or renders
- * something clearly wrong on joining, this is the first place to look.
+ * Per sub-chunk: version byte (9, the modern format with an explicit Y index) -> storage
+ * layer count (always 2: blocks, then the "liquid" layer for waterlogging, which is all
+ * air for now) -> signed Y index -> each block-storage layer (palette + bit-packed indices).
+ * <p>
+ * Sending only up to the highest non-empty sub-chunk, with zero-layer empty ones, parses
+ * fine but real clients disconnected with a generic "Block" error on it. Real clients accept
+ * the full-height, always-two-layer shape (confirmed by comparing against what AllayMC, a
+ * working server on the same protocol library, puts on the wire), so that's what's sent.
  */
 public final class ChunkEncoder {
+
+    /** The overworld spans Y -64 to 319, i.e. sub-chunks -4 to 19. */
+    private static final int MIN_SUB_CHUNK_Y = -4;
+    private static final int MAX_SUB_CHUNK_Y = 19;
+
+    /** What the LevelChunkPacket carrying {@link #encodeChunk(Chunk)} must set as subChunksLength. */
+    public static final int SUB_CHUNK_COUNT = MAX_SUB_CHUNK_Y - MIN_SUB_CHUNK_Y + 1;
 
     /** Legacy numeric id for the "plains" biome - used uniformly, since there's no terrain variety yet. */
     private static final int PLAINS_BIOME_ID = 1;
@@ -31,25 +39,38 @@ public final class ChunkEncoder {
     private ChunkEncoder() {
     }
 
-    /**
-     * @param subChunkY the subchunk's Y index (world Y divided by 16, floored)
-     */
-    public static ByteBuf encodeSubChunk(Chunk chunk, int subChunkY) {
+    public static ByteBuf encodeChunk(Chunk chunk) {
         ByteBuf buf = Unpooled.buffer();
 
-        buf.writeByte(9); // sub-chunk format version
-        buf.writeByte(subChunkY);
-        buf.writeByte(1); // one block-storage layer (no second "waterlogged" layer)
+        for (int y = MIN_SUB_CHUNK_Y; y <= MAX_SUB_CHUNK_Y; y++) {
+            writeSubChunk(buf, chunk, y);
+        }
 
-        writeBlockLayer(buf, chunk, subChunkY);
-        writeBiomeLayer(buf);
+        for (int y = MIN_SUB_CHUNK_Y; y <= MAX_SUB_CHUNK_Y; y++) {
+            writeBiomeSection(buf);
+        }
 
-        VarInts.writeUnsignedInt(buf, 0); // border blocks: none
+        buf.writeByte(0); // border blocks: none
 
         // Block entities (NBT compounds) would follow here; there are none yet, so nothing
         // more is written - readers for this format read compounds until the buffer ends.
 
         return buf;
+    }
+
+    private static void writeSubChunk(ByteBuf buf, Chunk chunk, int subChunkY) {
+        buf.writeByte(9); // sub-chunk format version
+        buf.writeByte(2); // storage layer count
+        buf.writeByte(subChunkY);
+
+        writeBlockLayer(buf, chunk, subChunkY);
+        writeAirLayer(buf);
+    }
+
+    /** The liquid layer: nothing is waterlogged yet, so it's a single-entry air palette. */
+    private static void writeAirLayer(ByteBuf buf) {
+        buf.writeByte((0 << 1) | 1);
+        VarInts.writeInt(buf, Blocks.AIR.getBlockStateHash());
     }
 
     private static void writeBlockLayer(ByteBuf buf, Chunk chunk, int subChunkY) {
@@ -82,17 +103,19 @@ public final class ChunkEncoder {
 
         writePackedIndices(buf, blockHashes, bitsPerBlock);
 
-        VarInts.writeInt(buf, paletteSize);
+        // With 0 bits per block the palette size isn't written - it's implicitly 1.
+        if (bitsPerBlock != 0) {
+            VarInts.writeInt(buf, paletteSize);
+        }
         for (int hash : paletteIndexByHash.keySet()) {
             VarInts.writeInt(buf, hash);
         }
     }
 
-    private static void writeBiomeLayer(ByteBuf buf) {
+    private static void writeBiomeSection(ByteBuf buf) {
         // Uniform single biome (plains) for the whole sub-chunk: bitsPerBlock 0 means
-        // "every position is palette entry 0", so no index array is written at all.
-        buf.writeByte(0 << 1);
-        VarInts.writeInt(buf, 1);
+        // "every position is palette entry 0", so no index array or palette size is written.
+        buf.writeByte((0 << 1) | 1);
         VarInts.writeInt(buf, PLAINS_BIOME_ID);
     }
 

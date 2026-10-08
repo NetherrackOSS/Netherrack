@@ -9,6 +9,7 @@ import com.netherrack.server.setup.Lang;
 import com.netherrack.server.setup.SetupWizard;
 import com.netherrack.server.util.AnsiSupport;
 import com.netherrack.server.util.Logger;
+import com.netherrack.server.util.NettyLogBridge;
 import com.netherrack.server.world.World;
 import com.netherrack.server.world.WorldManager;
 
@@ -44,11 +45,14 @@ public class Netherrack {
     }
 
     public static void main(String[] args) {
+        NettyLogBridge.install();
         AnsiSupport.init();
         new Netherrack().start();
     }
 
     private void start() {
+        Logger.openLogFile(Path.of("logs", "latest.log"));
+
         // Printed before a language is known either way, same as the wizard's own first
         // screen - there's nothing to translate it into yet.
         Logger.info("Starting Netherrack server version " + VERSION);
@@ -72,6 +76,11 @@ public class Netherrack {
         config.load(language);
         Lang.current = new Lang(config.get("language", language));
         Lang lang = Lang.current;
+
+        NettyLogBridge.setDebug(config.getBoolean("debug", false));
+        if (NettyLogBridge.isDebug()) {
+            Logger.warn(lang.get("server.debug_enabled"));
+        }
 
         String ip = config.get("server-ip", "0.0.0.0");
         int port = config.getInt("server-port", 19132);

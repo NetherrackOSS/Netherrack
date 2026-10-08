@@ -1,0 +1,4 @@
+instances/
+target/
+dependency-reduced-pom.xml
+logs/
