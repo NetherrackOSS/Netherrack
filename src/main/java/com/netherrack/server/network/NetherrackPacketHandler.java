@@ -28,7 +28,6 @@ import org.cloudburstmc.protocol.bedrock.packet.ChunkRadiusUpdatedPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ClientToServerHandshakePacket;
 import org.cloudburstmc.protocol.bedrock.packet.CraftingDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.CreativeContentPacket;
-import org.cloudburstmc.protocol.bedrock.data.definitions.DimensionDefinition;
 import org.cloudburstmc.protocol.bedrock.packet.DimensionDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ItemComponentPacket;
 import org.cloudburstmc.protocol.bedrock.packet.JigsawStructureDataPacket;
@@ -313,18 +312,13 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         // equivalent code is explicit that chunks get ignored and the client can't join
         // without this preceding it.
         //
-        // Explicitly declaring a 0-256 height range (the classic pre-1.18 Bedrock height,
-        // 16 sub-chunks) rather than leaving this empty - an empty definitions list means
-        // the client falls back to its own default modern overworld bounds (-64 to 319),
-        // which uses a completely different chunk-loading protocol (the client requests
-        // individual sub-chunks via SubChunkRequestPacket) than the single-packet, inline
-        // sub-chunk model (LevelChunkPacket.subChunksLength) Netherrack currently sends
-        // chunks with. That mismatch is almost certainly what the client's "Block" error
-        // was actually about - not the block identity scheme itself.
-        DimensionDataPacket dimensionData = new DimensionDataPacket();
-        dimensionData.getDefinitions().add(
-                new DimensionDefinition("minecraft:overworld", 256, 0, 2, 0, null, "minecraft:plains"));
-        session.sendPacket(dimensionData);
+        // Empty definitions list: the client keeps its default overworld bounds (-64 to
+        // 319), which is what ChunkEncoder sends (all 24 sub-chunks inline in each
+        // LevelChunkPacket). Clients join fine with this; the "Block" error on joining
+        // turned out to be caused by an empty SyncEntityPropertyPacket, not the dimension
+        // height. If this ever declares different bounds, ChunkEncoder's sub-chunk range
+        // has to change to match.
+        session.sendPacket(new DimensionDataPacket());
 
         // Both of these also have to arrive before StartGame on current clients - without the
         // jigsaw data the client disconnects with "Missing structure data from server". Empty
