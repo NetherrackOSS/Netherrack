@@ -1,6 +1,7 @@
 package com.netherrack.server.network;
 
 import com.netherrack.server.ServerConfig;
+import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.util.NettyLogBridge;
 import io.netty.bootstrap.ServerBootstrap;
@@ -43,7 +44,7 @@ public class RakNetServer {
         this.config = config;
     }
 
-    public void start(World world) {
+    public void start(World world, PlayerManager players) {
         String ip = config.get("server-ip", "0.0.0.0");
         int port = config.getInt("server-port", 19132);
 
@@ -72,11 +73,13 @@ public class RakNetServer {
                         // only visible with debug=true).
                         session.setLogging(NettyLogBridge.isDebug());
 
-                        NetherrackPacketHandler handler = new NetherrackPacketHandler(session, world);
+                        NetherrackPacketHandler handler = new NetherrackPacketHandler(session, world, players);
                         session.setPacketHandler(handler);
 
-                        session.getPeer().getChannel().closeFuture().addListener(f ->
-                                Logger.info(handler.getDisplayName() + " disconnected."));
+                        session.getPeer().getChannel().closeFuture().addListener(f -> {
+                            handler.onDisconnect();
+                            Logger.info(handler.getDisplayName() + " disconnected.");
+                        });
                     }
                 })
                 .bind(new InetSocketAddress(ip, port));

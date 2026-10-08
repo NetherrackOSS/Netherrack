@@ -5,6 +5,7 @@ import com.netherrack.server.command.HelpCommand;
 import com.netherrack.server.command.StopCommand;
 import com.netherrack.server.command.VersionCommand;
 import com.netherrack.server.network.RakNetServer;
+import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.setup.Lang;
 import com.netherrack.server.setup.SetupWizard;
 import com.netherrack.server.util.AnsiSupport;
@@ -24,6 +25,7 @@ public class Netherrack {
 
     private final ServerConfig config;
     private final RakNetServer rakNetServer;
+    private final PlayerManager playerManager = new PlayerManager();
     private final WorldManager worldManager;
     private final CommandManager commandManager;
     private World world;
@@ -94,7 +96,7 @@ public class Netherrack {
 
         sleep(150);
         Logger.info(lang.get("server.opening", ip, port));
-        rakNetServer.start(world);
+        rakNetServer.start(world, playerManager);
 
         sleep(150);
         Logger.info(lang.get("server.early_build"));
