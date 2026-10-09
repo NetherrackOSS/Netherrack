@@ -7,7 +7,6 @@ import org.cloudburstmc.math.vector.Vector3i;
 import org.cloudburstmc.protocol.bedrock.data.GameType;
 import org.cloudburstmc.protocol.bedrock.data.LevelEvent;
 import org.cloudburstmc.protocol.bedrock.data.SoundEvent;
-import org.cloudburstmc.protocol.bedrock.data.PlayerPermission;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandPermission;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
 import org.cloudburstmc.protocol.bedrock.packet.AddPlayerPacket;
@@ -35,7 +34,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Every player currently in the world, and keeping them visible to each other: showing
  * players to each other as they join, removing them as they leave, and passing each
- * player's movement on to everyone else.
+ * player's movement on to everyone else. Spectators are the exception: they stay in
+ * everyone's player list, but nobody else sees them in the world.
  * <p>
  * Players' packets are handled on different network threads. join() and leave() are
  * synchronized so two players joining at once can't each miss the other; sending is
@@ -77,11 +77,32 @@ public class PlayerManager {
         AddPlayerPacket joiningEntity = addPlayer(joining);
         MobArmorEquipmentPacket joiningArmor = armor(joining);
         for (Player other : others(joining)) {
-            joining.getSession().sendPacket(addPlayer(other));
-            joining.getSession().sendPacket(armor(other));
+            if (!other.isSpectator()) {
+                joining.getSession().sendPacket(addPlayer(other));
+                joining.getSession().sendPacket(armor(other));
+            }
             other.getSession().sendPacket(joiningEntry);
-            other.getSession().sendPacket(joiningEntity);
-            other.getSession().sendPacket(joiningArmor);
+            if (!joining.isSpectator()) {
+                other.getSession().sendPacket(joiningEntity);
+                other.getSession().sendPacket(joiningArmor);
+            }
+        }
+    }
+
+    /**
+     * Switches a player's game mode, hiding them from everyone else as they become a
+     * spectator and showing them again as they stop being one.
+     */
+    public synchronized void changeGameMode(Player player, GameType gameMode) {
+        boolean wasSpectator = player.isSpectator();
+        player.setGameMode(gameMode);
+        if (!wasSpectator && player.isSpectator()) {
+            RemoveEntityPacket removeEntity = new RemoveEntityPacket();
+            removeEntity.setUniqueEntityId(player.getEntityId());
+            broadcast(player, removeEntity);
+        } else if (wasSpectator && !player.isSpectator()) {
+            broadcast(player, addPlayer(player));
+            broadcast(player, armor(player));
         }
     }
 
@@ -109,7 +130,7 @@ public class PlayerManager {
         move.setMode(MovePlayerPacket.Mode.NORMAL);
         move.setOnGround(onGround);
         move.setTick(tick);
-        broadcast(mover, move);
+        broadcastSeen(mover, move);
     }
 
     /** Shows everyone else a change to the player's entity data, e.g. starting to sneak. */
@@ -117,7 +138,7 @@ public class PlayerManager {
         SetEntityDataPacket entityData = new SetEntityDataPacket();
         entityData.setRuntimeEntityId(player.getEntityId());
         entityData.setMetadata(player.createMetadata());
-        broadcast(player, entityData);
+        broadcastSeen(player, entityData);
     }
 
     /**
@@ -176,7 +197,7 @@ public class PlayerManager {
 
     /** Shows everyone else what the player is wearing, after it changes. */
     public void broadcastArmor(Player player) {
-        broadcast(player, armor(player));
+        broadcastSeen(player, armor(player));
     }
 
     /** Shows everyone else the player swinging their arm. */
@@ -185,13 +206,20 @@ public class PlayerManager {
         animate.setRuntimeEntityId(swinger.getEntityId());
         animate.setAction(AnimatePacket.Action.SWING_ARM);
         animate.setSwingSource(source != null ? source : AnimatePacket.SwingSource.NONE);
-        broadcast(swinger, animate);
+        broadcastSeen(swinger, animate);
     }
 
     /** Sends a packet to every player in the world. */
     public void sendToAll(BedrockPacket packet) {
         for (Player player : players.values()) {
             player.getSession().sendPacket(packet);
+        }
+    }
+
+    /** Sends everyone else something about how a player looks or moves - unless nobody can see them. */
+    private void broadcastSeen(Player player, BedrockPacket packet) {
+        if (!player.isSpectator()) {
+            broadcast(player, packet);
         }
     }
 
@@ -273,7 +301,7 @@ public class PlayerManager {
         packet.setDeviceId(player.getDeviceId());
         packet.setBuildPlatform(player.getBuildPlatform());
         packet.getAdventureSettings().setUniqueEntityId(player.getEntityId());
-        packet.getAdventureSettings().setPlayerPermission(PlayerPermission.MEMBER);
+        packet.getAdventureSettings().setPlayerPermission(player.getPermission().toPlayerPermission());
         packet.getAdventureSettings().setCommandPermission(CommandPermission.ANY);
         packet.setMetadata(player.createMetadata());
         return packet;

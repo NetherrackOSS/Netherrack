@@ -47,6 +47,8 @@ public class ServerConfig {
         properties.setProperty("online-mode", "true");
         properties.setProperty("language", language);
         properties.setProperty("debug", "false");
+        properties.setProperty("default-player-permission-level", "member");
+        properties.setProperty("op-permission-level", "2");
 
         try (OutputStream out = Files.newOutputStream(path)) {
             properties.store(out, "Netherrack server configuration");

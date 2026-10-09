@@ -34,6 +34,8 @@ import java.util.List;
  * the player holds, one of which is used up.
  * <p>
  * In creative, the first hit breaks a block and nothing drops, and placing uses nothing up.
+ * Visitors and adventure-mode players may do neither - their clients are told so, but the
+ * server checks too, since a client can't be trusted to.
  * <p>
  * There's one of these per player, since it keeps track of the block they're breaking.
  */
@@ -77,13 +79,13 @@ public class BlockInteraction {
         for (PlayerBlockActionData action : actions) {
             Vector3i position = action.getBlockPosition();
             switch (action.getAction()) {
-                case START_BREAK -> startBreaking(position);
+                case START_BREAK -> startBreaking(player, position);
                 // Sent whenever the player, still holding the button, looks onto another
                 // block - and again for the same block alongside BLOCK_PREDICT_DESTROY when
                 // a break finishes. Only a different block starts new cracks.
                 case BLOCK_CONTINUE_DESTROY -> {
                     if (!position.equals(breaking)) {
-                        startBreaking(position);
+                        startBreaking(player, position);
                     }
                 }
                 case ABORT_BREAK, STOP_BREAK -> stopBreaking();
@@ -136,6 +138,9 @@ public class BlockInteraction {
 
     /** Why the placement can't happen, or null if it can. */
     private String placementRefusal(Player player, InventoryTransactionPacket packet, Vector3i clicked, Vector3i target) {
+        if (!player.mayBuild()) {
+            return "they may not build";
+        }
         ItemData held = player.getInventory().get(packet.getHotbarSlot());
         if (held.isNull() || packet.getItemInHand() == null || packet.getItemInHand().getDefinition() == null
                 || held.getDefinition().getRuntimeId() != packet.getItemInHand().getDefinition().getRuntimeId()) {
@@ -161,8 +166,11 @@ public class BlockInteraction {
         return null;
     }
 
-    private void startBreaking(Vector3i position) {
+    private void startBreaking(Player player, Vector3i position) {
         stopBreaking(); // moving on from another block leaves no cracks behind on it
+        if (!player.mayBuild()) {
+            return;
+        }
         Block block = world.getBlock(position.getX(), position.getY(), position.getZ());
         if (block == null) {
             return;
@@ -183,7 +191,7 @@ public class BlockInteraction {
 
     private void breakBlock(Player player, Vector3i position) {
         Block block = world.getBlock(position.getX(), position.getY(), position.getZ());
-        if (block == null || !inWorld(position) || !withinReach(player, position)) {
+        if (block == null || !player.mayBuild() || !inWorld(position) || !withinReach(player, position)) {
             Logger.debug(player.getUsername() + " could not break the block at " + position);
             stopBreaking();
             player.getSession().sendPacket(PlayerManager.blockUpdate(position, blockAt(position)));

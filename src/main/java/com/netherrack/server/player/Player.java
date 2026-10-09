@@ -6,13 +6,13 @@ import org.cloudburstmc.protocol.bedrock.data.Ability;
 import org.cloudburstmc.protocol.bedrock.data.AbilityLayer;
 import org.cloudburstmc.protocol.bedrock.data.BuildPlatform;
 import org.cloudburstmc.protocol.bedrock.data.GameType;
-import org.cloudburstmc.protocol.bedrock.data.PlayerPermission;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandPermission;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataMap;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataTypes;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityFlag;
 import org.cloudburstmc.protocol.bedrock.data.skin.SerializedSkin;
 import org.cloudburstmc.protocol.bedrock.packet.SetPlayerGameTypePacket;
+import org.cloudburstmc.protocol.bedrock.packet.TextPacket;
 import org.cloudburstmc.protocol.bedrock.packet.UpdateAbilitiesPacket;
 
 import java.util.EnumSet;
@@ -57,6 +57,8 @@ public class Player {
     private volatile Vector3f rotation = Vector3f.ZERO;
     private volatile boolean sneaking;
     private volatile GameType gameMode;
+    private volatile Permission permission = Permission.MEMBER;
+    private volatile int commandLevel;
 
     public Player(BedrockServerSession session, String username, UUID uuid, String xuid, long entityId,
                   SerializedSkin skin, String deviceId, BuildPlatform buildPlatform, Vector3f position,
@@ -161,18 +163,70 @@ public class Player {
         return gameMode == GameType.CREATIVE;
     }
 
+    /** Spectators fly through everything, unseen, and can't change or pick up anything. */
+    public boolean isSpectator() {
+        return gameMode == GameType.SPECTATOR;
+    }
+
     /** Switches the player's game mode and tells their client, which changes what they can do. */
     public void setGameMode(GameType gameMode) {
         this.gameMode = gameMode;
         SetPlayerGameTypePacket packet = new SetPlayerGameTypePacket();
         packet.setGamemode(gameMode.ordinal());
         session.sendPacket(packet);
+        sendAbilities();
+    }
+
+    public Permission getPermission() {
+        return permission;
+    }
+
+    /** The commands this player may run: 0, or op-permission-level for an operator. See Command.getPermissionLevel(). */
+    public int getCommandLevel() {
+        return commandLevel;
+    }
+
+    /**
+     * Sets what the player may do. Their client only hears of it with {@link #sendAbilities()},
+     * so this can be set before they've joined.
+     */
+    public void setPermission(Permission permission, int commandLevel) {
+        this.permission = permission;
+        this.commandLevel = commandLevel;
+    }
+
+    /** Whether the player may break and place blocks: not as a visitor, nor in adventure or spectator mode. */
+    public boolean mayBuild() {
+        return permission != Permission.VISITOR && gameMode != GameType.ADVENTURE && gameMode != GameType.SPECTATOR;
+    }
+
+    /**
+     * A message in the player's chat that their client words itself, from a vanilla
+     * translation key (e.g. "commands.op.message"). A parameter starting with "%" is
+     * itself a key.
+     */
+    public void sendTranslation(String key, String... params) {
+        TextPacket text = new TextPacket();
+        text.setType(TextPacket.Type.TRANSLATION);
+        text.setNeedsTranslation(true);
+        text.setSourceName("");
+        text.setXuid("");
+        text.setPlatformChatId("");
+        text.setMessage(key);
+        text.setParameters(List.of(params));
+        session.sendPacket(text);
+    }
+
+    /** Tells the player's client what they may do, after their game mode or permission changes. */
+    public void sendAbilities() {
         session.sendPacket(createAbilities());
     }
 
     /**
      * What the player's client lets them do: build, mine, attack and so on, plus flying
-     * and instant building in creative, and nothing at all in adventure but use things.
+     * and instant building in creative, nothing at all in adventure but use things, and
+     * only flying through everything in spectator.
+     * Visitors may only look around; operators may also use operator commands.
      */
     public UpdateAbilitiesPacket createAbilities() {
         // One base layer that defines every ability, with the game mode's set enabled.
@@ -186,7 +240,16 @@ public class Player {
             }
             case ADVENTURE -> base.getAbilityValues().addAll(EnumSet.of(Ability.DOORS_AND_SWITCHES,
                     Ability.OPEN_CONTAINERS, Ability.ATTACK_PLAYERS, Ability.ATTACK_MOBS));
+            // Always flying, through blocks, and unhurt - but touching nothing.
+            case SPECTATOR -> base.getAbilityValues().addAll(EnumSet.of(Ability.MAY_FLY, Ability.FLYING,
+                    Ability.NO_CLIP, Ability.INVULNERABLE));
             default -> base.getAbilityValues().addAll(SURVIVAL_ABILITIES);
+        }
+        if (permission == Permission.VISITOR) {
+            base.getAbilityValues().removeAll(EnumSet.of(Ability.BUILD, Ability.MINE, Ability.DOORS_AND_SWITCHES,
+                    Ability.OPEN_CONTAINERS, Ability.ATTACK_PLAYERS, Ability.ATTACK_MOBS));
+        } else if (permission == Permission.OPERATOR) {
+            base.getAbilityValues().add(Ability.OPERATOR_COMMANDS);
         }
         base.setWalkSpeed(0.1f);
         base.setFlySpeed(0.05f);
@@ -194,8 +257,8 @@ public class Player {
 
         UpdateAbilitiesPacket abilities = new UpdateAbilitiesPacket();
         abilities.setUniqueEntityId(entityId);
-        abilities.setPlayerPermission(PlayerPermission.MEMBER);
-        abilities.setCommandPermission(CommandPermission.ANY);
+        abilities.setPlayerPermission(permission.toPlayerPermission());
+        abilities.setCommandPermission(CommandPermission.values()[commandLevel]);
         abilities.setAbilityLayers(List.of(base));
         return abilities;
     }

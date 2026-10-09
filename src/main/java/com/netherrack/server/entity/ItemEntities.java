@@ -101,7 +101,9 @@ public class ItemEntities {
         }
 
         for (Player player : players.getPlayers()) {
-            pickUp(player);
+            if (!player.isSpectator()) {
+                pickUp(player);
+            }
         }
     }
 

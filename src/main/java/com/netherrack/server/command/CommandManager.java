@@ -1,12 +1,11 @@
 package com.netherrack.server.command;
 
 import com.netherrack.server.Netherrack;
-import com.netherrack.server.setup.Lang;
-import com.netherrack.server.util.Logger;
 
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 
 public class CommandManager {
@@ -20,7 +19,15 @@ public class CommandManager {
         }
     }
 
-    public void dispatch(Netherrack server, String input) {
+    /**
+     * Every registered command once, in registration order - a LinkedHashSet, since a
+     * command registered under multiple aliases (e.g. help/?) appears once per name.
+     */
+    public List<Command> getCommands() {
+        return List.copyOf(new LinkedHashSet<>(commandsByName.values()));
+    }
+
+    public void dispatch(Netherrack server, CommandSender sender, String input) {
         if (input.isEmpty()) {
             return;
         }
@@ -31,18 +38,13 @@ public class CommandManager {
 
         Command command = commandsByName.get(name);
         if (command == null) {
-            Logger.info(Lang.current.get("command.unknown", parts[0]));
+            sender.sendFailure("commands.generic.unknown", parts[0]);
             return;
         }
-        command.execute(server, args);
-    }
-
-    public void printHelp() {
-        Logger.info(Lang.current.get("command.help.header"));
-        // A LinkedHashSet so a command registered under multiple aliases (e.g. help/?)
-        // is only printed once, in registration order.
-        for (Command command : new LinkedHashSet<>(commandsByName.values())) {
-            Logger.info(Lang.current.get(command.getHelpLangKey()));
+        if (sender.getPermissionLevel() < command.getPermissionLevel()) {
+            sender.sendFailure("commands.generic.error.permissions", parts[0]);
+            return;
         }
+        command.execute(server, sender, args);
     }
 }

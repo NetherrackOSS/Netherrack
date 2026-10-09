@@ -1,12 +1,20 @@
 package com.netherrack.server;
 
+import com.netherrack.server.command.AvailableCommands;
 import com.netherrack.server.command.CommandManager;
+import com.netherrack.server.command.ConsoleCommandSender;
+import com.netherrack.server.command.DeopCommand;
 import com.netherrack.server.command.GamemodeCommand;
 import com.netherrack.server.command.HelpCommand;
+import com.netherrack.server.command.OpCommand;
 import com.netherrack.server.command.StopCommand;
 import com.netherrack.server.command.VersionCommand;
 import com.netherrack.server.entity.ItemEntities;
 import com.netherrack.server.network.RakNetServer;
+import com.netherrack.server.player.GameModes;
+import com.netherrack.server.player.Permission;
+import com.netherrack.server.player.Permissions;
+import com.netherrack.server.player.Player;
 import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.setup.Lang;
 import com.netherrack.server.setup.SetupWizard;
@@ -19,6 +27,8 @@ import com.netherrack.server.world.WorldManager;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
+import org.cloudburstmc.protocol.bedrock.data.GameType;
+
 import java.nio.file.Path;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -38,6 +48,7 @@ public class Netherrack {
     private final CommandManager commandManager;
     private World world;
     private ItemEntities itemEntities;
+    private Permissions permissions;
     private ScheduledExecutorService ticker;
     private volatile boolean running = true;
 
@@ -51,6 +62,8 @@ public class Netherrack {
         commandManager.register(new VersionCommand());
         commandManager.register(new HelpCommand());
         commandManager.register(new GamemodeCommand());
+        commandManager.register(new OpCommand());
+        commandManager.register(new DeopCommand());
     }
 
     public ServerConfig getConfig() {
@@ -59,6 +72,33 @@ public class Netherrack {
 
     public PlayerManager getPlayerManager() {
         return playerManager;
+    }
+
+    public Permissions getPermissions() {
+        return permissions;
+    }
+
+    /**
+     * The command level operators get: op-permission-level from server.properties, 0 to 4.
+     * See Command.getPermissionLevel() - at 4, operators may also stop the server.
+     */
+    public int getOpPermissionLevel() {
+        return Math.max(0, Math.min(4, config.getInt("op-permission-level", 2)));
+    }
+
+    /** The command level that goes with a permission. */
+    public int commandLevelFor(Permission permission) {
+        return permission == Permission.OPERATOR ? getOpPermissionLevel() : 0;
+    }
+
+    /**
+     * Gives an online player a permission, telling their client what they may now do -
+     * including which commands to suggest.
+     */
+    public void applyPermission(Player player, Permission permission) {
+        player.setPermission(permission, commandLevelFor(permission));
+        player.sendAbilities();
+        player.getSession().sendPacket(AvailableCommands.forLevel(commandManager, player.getCommandLevel()));
     }
 
     public ItemEntities getItemEntities() {
@@ -101,6 +141,8 @@ public class Netherrack {
         config.load(language);
         Lang.current = new Lang(config.get("language", language));
         Lang lang = Lang.current;
+
+        permissions = Permissions.load(Permissions.FILE, defaultPermission());
 
         NettyLogBridge.setDebug(config.getBoolean("debug", false));
         if (NettyLogBridge.isDebug()) {
@@ -148,7 +190,7 @@ public class Netherrack {
                 if (line == null) {
                     continue;
                 }
-                commandManager.dispatch(this, line.trim());
+                commandManager.dispatch(this, ConsoleCommandSender.INSTANCE, line.trim());
             }
         } catch (Exception e) {
             Logger.error("Console loop terminated: " + e.getMessage());
@@ -165,6 +207,29 @@ public class Netherrack {
         Logger.info(Lang.current.get("server.closed"));
         running = false;
         System.exit(0);
+    }
+
+    /** The game mode players join in, and "default" stands for: "gamemode" in server.properties. */
+    public GameType getDefaultGameMode() {
+        String configured = config.get("gamemode", "survival");
+        GameType gameMode = GameModes.parse(configured);
+        if (gameMode == null) {
+            Logger.warn("Unknown gamemode \"" + configured + "\" in server.properties, using survival.");
+            return GameType.SURVIVAL;
+        }
+        return gameMode;
+    }
+
+    /** default-player-permission-level from server.properties: what players without a permissions.json entry get. */
+    private Permission defaultPermission() {
+        String configured = config.get("default-player-permission-level", "member");
+        Permission permission = Permission.fromName(configured);
+        if (permission == null) {
+            Logger.warn("Unknown default-player-permission-level \"" + configured
+                    + "\" in server.properties, using member. Expected visitor, member or operator.");
+            return Permission.MEMBER;
+        }
+        return permission;
     }
 
     /**
