@@ -46,6 +46,7 @@ public class ServerConfig {
         properties.setProperty("view-distance", "10");
         properties.setProperty("online-mode", "true");
         properties.setProperty("language", language);
+        properties.setProperty("debug", "false");
 
         try (OutputStream out = Files.newOutputStream(path)) {
             properties.store(out, "Netherrack server configuration");

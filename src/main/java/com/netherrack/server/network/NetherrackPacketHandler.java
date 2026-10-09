@@ -1,10 +1,13 @@
 package com.netherrack.server.network;
 
+import com.netherrack.server.Netherrack;
 import com.netherrack.server.block.Block;
+import com.netherrack.server.player.Player;
+import com.netherrack.server.player.PlayerManager;
+import com.netherrack.server.player.SkinParser;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.world.Chunk;
 import com.netherrack.server.world.World;
-import io.netty.buffer.ByteBuf;
 import org.cloudburstmc.math.vector.Vector2f;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.math.vector.Vector3i;
@@ -14,29 +17,37 @@ import org.cloudburstmc.protocol.bedrock.data.AuthoritativeMovementMode;
 import org.cloudburstmc.protocol.bedrock.data.ChatRestrictionLevel;
 import org.cloudburstmc.protocol.bedrock.data.EduSharedUriResource;
 import org.cloudburstmc.protocol.bedrock.data.GamePublishSetting;
+import org.cloudburstmc.protocol.bedrock.data.Ability;
+import org.cloudburstmc.protocol.bedrock.data.AbilityLayer;
+import org.cloudburstmc.protocol.bedrock.data.AttributeData;
+import org.cloudburstmc.protocol.bedrock.data.BuildPlatform;
 import org.cloudburstmc.protocol.bedrock.data.GameType;
 import org.cloudburstmc.protocol.bedrock.data.NetworkPermissions;
 import org.cloudburstmc.protocol.bedrock.data.PacketCompressionAlgorithm;
+import org.cloudburstmc.protocol.bedrock.data.PlayerAuthInputData;
 import org.cloudburstmc.protocol.bedrock.data.PlayerPermission;
 import org.cloudburstmc.protocol.bedrock.data.SpawnBiomeType;
 import org.cloudburstmc.protocol.bedrock.data.WorldType;
+import org.cloudburstmc.protocol.bedrock.data.command.CommandPermission;
+import org.cloudburstmc.protocol.bedrock.data.skin.SerializedSkin;
 import org.cloudburstmc.nbt.NbtMap;
+import org.cloudburstmc.nbt.NbtType;
+import org.cloudburstmc.protocol.bedrock.packet.AnimatePacket;
 import org.cloudburstmc.protocol.bedrock.packet.AvailableEntityIdentifiersPacket;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacketHandler;
+import org.cloudburstmc.protocol.bedrock.packet.BiomeDefinitionListPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ChunkRadiusUpdatedPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ClientToServerHandshakePacket;
-import org.cloudburstmc.protocol.bedrock.packet.CompressedBiomeDefinitionListPacket;
 import org.cloudburstmc.protocol.bedrock.packet.CraftingDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.CreativeContentPacket;
-import org.cloudburstmc.protocol.bedrock.data.definitions.DimensionDefinition;
 import org.cloudburstmc.protocol.bedrock.packet.DimensionDataPacket;
-import org.cloudburstmc.protocol.bedrock.packet.JigsawStructureDataPacket;
-import org.cloudburstmc.protocol.bedrock.packet.VoxelShapesPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ItemComponentPacket;
+import org.cloudburstmc.protocol.bedrock.packet.JigsawStructureDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LevelChunkPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LoginPacket;
 import org.cloudburstmc.protocol.bedrock.packet.NetworkChunkPublisherUpdatePacket;
 import org.cloudburstmc.protocol.bedrock.packet.NetworkSettingsPacket;
+import org.cloudburstmc.protocol.bedrock.packet.PlayerAuthInputPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ServerToClientHandshakePacket;
 import org.cloudburstmc.protocol.bedrock.packet.PlayStatusPacket;
 import org.cloudburstmc.protocol.bedrock.packet.RequestChunkRadiusPacket;
@@ -44,19 +55,28 @@ import org.cloudburstmc.protocol.bedrock.packet.RequestNetworkSettingsPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ResourcePackClientResponsePacket;
 import org.cloudburstmc.protocol.bedrock.packet.ResourcePackStackPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ResourcePacksInfoPacket;
+import org.cloudburstmc.protocol.bedrock.packet.SetEntityDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.SetLocalPlayerAsInitializedPacket;
 import org.cloudburstmc.protocol.bedrock.packet.StartGamePacket;
-import org.cloudburstmc.protocol.bedrock.packet.SyncEntityPropertyPacket;
+import org.cloudburstmc.protocol.bedrock.packet.TextPacket;
 import org.cloudburstmc.protocol.bedrock.packet.TrimDataPacket;
+import org.cloudburstmc.protocol.bedrock.packet.UpdateAbilitiesPacket;
+import org.cloudburstmc.protocol.bedrock.packet.UpdateAttributesPacket;
+import org.cloudburstmc.protocol.bedrock.packet.VoxelShapesPacket;
 import org.cloudburstmc.protocol.bedrock.util.ChainValidationResult;
 import org.cloudburstmc.protocol.bedrock.util.EncryptionUtils;
 import org.cloudburstmc.protocol.common.PacketSignal;
 import org.cloudburstmc.protocol.common.util.OptionalBoolean;
+import org.jose4j.json.JsonUtil;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
-import java.util.Collections;
+import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
@@ -64,12 +84,11 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Drives one player's login sequence:
  * RequestNetworkSettings -> NetworkSettings -> Login -> PlayStatus(LOGIN_SUCCESS)
- * -> ResourcePacksInfo -> ResourcePackClientResponse -> ResourcePackStack
- * -> JigsawStructureData -> VoxelShapes -> DimensionData
- * -> StartGame -> CompressedBiomeDefinitionList -> AvailableEntityIdentifiers
- * -> ItemComponent -> CreativeContent -> SyncEntityProperty -> CraftingData -> TrimData
- * -> RequestChunkRadius -> ChunkRadiusUpdated -> LevelChunk(s) -> NetworkChunkPublisherUpdate
- * -> SetLocalPlayerAsInitialized -> PlayStatus(PLAYER_SPAWN)
+ * -> ResourcePacksInfo -> ResourcePackClientResponse -> ResourcePackStack -> DimensionData
+ * -> JigsawStructureData -> VoxelShapes -> StartGame -> BiomeDefinitionList -> AvailableEntityIdentifiers
+ * -> ItemComponent -> CreativeContent -> CraftingData -> TrimData
+ * -> RequestChunkRadius -> ChunkRadiusUpdated -> NetworkChunkPublisherUpdate -> LevelChunk(s)
+ * -> PlayStatus(PLAYER_SPAWN) -> SetLocalPlayerAsInitialized
  * <p>
  * Targets Bedrock_v2193 (1.26.50) because that's what the real client actually speaks on
  * the wire - the codec has to match the client's real protocol version, full stop, or every
@@ -87,6 +106,8 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
     private final BedrockServerSession session;
     private final World world;
+    private final PlayerManager players;
+    private final Netherrack netherrack;
     private final VanillaData vanillaData = VanillaData.get();
     private final long runtimeEntityId = ENTITY_ID_COUNTER.getAndIncrement();
 
@@ -94,10 +115,18 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
     private volatile String uuid;
     private volatile boolean awaitingHandshakeAck;
     private volatile Vector3f spawnPosition;
+    private volatile boolean spawned;
+    private volatile String xuid = "";
+    private volatile SerializedSkin skin = SkinParser.fallback();
+    private volatile String deviceId = "";
+    private volatile BuildPlatform buildPlatform = BuildPlatform.UNKNOWN;
+    private volatile Player player;
 
-    public NetherrackPacketHandler(BedrockServerSession session, World world) {
+    public NetherrackPacketHandler(BedrockServerSession session, World world, PlayerManager players, Netherrack netherrack) {
         this.session = session;
         this.world = world;
+        this.players = players;
+        this.netherrack = netherrack;
     }
 
     /**
@@ -141,6 +170,10 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             ChainValidationResult.IdentityData identityData = identityClaims.extraData;
 
             username = identityData.displayName;
+            if (identityData.xuid != null) {
+                xuid = identityData.xuid;
+            }
+            readClientData(packet.getClientJwt(), identityClaims);
             uuid = identityData.identity != null
                     ? identityData.identity.toString()
                     : UUID.nameUUIDFromBytes(("offline:" + username).getBytes(StandardCharsets.UTF_8)).toString();
@@ -176,6 +209,28 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             completeLogin();
         }
         return PacketSignal.HANDLED;
+    }
+
+    /**
+     * Reads the skin and device details from the client data JWT, checked against the
+     * identity key from the login chain. A failure here only costs the player their skin
+     * (they get a blank one), not the login.
+     */
+    private void readClientData(String clientJwt, ChainValidationResult.IdentityClaims identityClaims) {
+        try {
+            byte[] payload = EncryptionUtils.verifyClientData(clientJwt, identityClaims.parsedIdentityPublicKey());
+            Map<String, Object> clientData = JsonUtil.parseJson(new String(payload, StandardCharsets.UTF_8));
+
+            skin = SkinParser.parse(clientData);
+            if (clientData.get("DeviceId") instanceof String id) {
+                deviceId = id;
+            }
+            if (clientData.get("DeviceOS") instanceof Number os) {
+                buildPlatform = BuildPlatform.from(os.intValue());
+            }
+        } catch (Exception e) {
+            Logger.warn("Could not read the client data for " + username + ", using a blank skin: " + e.getMessage());
+        }
     }
 
     /**
@@ -228,10 +283,13 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         double spawnX = ThreadLocalRandom.current().nextDouble(-6, 6);
         double spawnZ = ThreadLocalRandom.current().nextDouble(-6, 6);
         int spawnY = world.getSpawnY();
-        spawnPosition = Vector3f.from(spawnX, spawnY, spawnZ);
+        spawnPosition = Vector3f.from(spawnX, spawnY + Player.EYE_HEIGHT, spawnZ);
 
         Logger.info("Player " + username + " cannot find the saved spawnpoint, reset the spawnpoint to "
                 + spawnX + " " + spawnY + ".0 " + spawnZ + " / " + world.getName());
+
+        player = new Player(session, username, UUID.fromString(uuid), xuid, runtimeEntityId,
+                skin, deviceId, buildPlatform, spawnPosition);
 
         PlayStatusPacket loginSuccess = new PlayStatusPacket();
         loginSuccess.setStatus(PlayStatusPacket.Status.LOGIN_SUCCESS);
@@ -272,61 +330,210 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         radiusUpdated.setRadius(radius);
         session.sendPacket(radiusUpdated);
 
-        sendChunks(radius);
-
+        // Sent ahead of the chunks so the client already treats this area as in range
+        // when they arrive.
         NetworkChunkPublisherUpdatePacket publisherUpdate = new NetworkChunkPublisherUpdatePacket();
         publisherUpdate.setPosition(Vector3i.from(spawnPosition.getFloorX(), spawnPosition.getFloorY(), spawnPosition.getFloorZ()));
         publisherUpdate.setRadius(radius * 16);
         session.sendPacket(publisherUpdate);
 
+        sendChunks(radius);
+
+        // PLAYER_SPAWN is what moves the client off the loading screen, and the client only
+        // sends SetLocalPlayerAsInitialized after receiving it - so it has to go out here,
+        // unprompted, once the spawn chunks are on their way. The client can re-request
+        // its radius later (e.g. a render distance change), hence the once-only flag.
+        if (!spawned) {
+            spawned = true;
+            sendOwnPlayerState();
+
+            PlayStatusPacket spawn = new PlayStatusPacket();
+            spawn.setStatus(PlayStatusPacket.Status.PLAYER_SPAWN);
+            session.sendPacket(spawn);
+        }
+
         return PacketSignal.HANDLED;
+    }
+
+    /**
+     * What the client needs to know about its own player before spawning: its entity
+     * flags (breathing, gravity, collision - see Player.createMetadata()), its attributes
+     * (walk speed, health, hunger), and what it's allowed to do. Without these the client
+     * shows the air bar and moves the player as if it were floating on ice.
+     */
+    private void sendOwnPlayerState() {
+        SetEntityDataPacket entityData = new SetEntityDataPacket();
+        entityData.setRuntimeEntityId(runtimeEntityId);
+        entityData.setMetadata(player.createMetadata());
+        session.sendPacket(entityData);
+
+        // Vanilla defaults for a new survival player: (name, min, max, value, default).
+        float noLimit = Float.MAX_VALUE;
+        UpdateAttributesPacket attributes = new UpdateAttributesPacket();
+        attributes.setRuntimeEntityId(runtimeEntityId);
+        attributes.setAttributes(List.of(
+                new AttributeData("minecraft:health", 0, 20, 20, 20),
+                new AttributeData("minecraft:absorption", 0, noLimit, 0, 0),
+                new AttributeData("minecraft:movement", 0, noLimit, 0.1f, 0.1f),
+                new AttributeData("minecraft:underwater_movement", 0, noLimit, 0.02f, 0.02f),
+                new AttributeData("minecraft:lava_movement", 0, noLimit, 0.02f, 0.02f),
+                new AttributeData("minecraft:player.hunger", 0, 20, 20, 20),
+                new AttributeData("minecraft:player.saturation", 0, 20, 5, 5),
+                new AttributeData("minecraft:player.exhaustion", 0, 5, 0, 0),
+                new AttributeData("minecraft:player.level", 0, 24791, 0, 0),
+                new AttributeData("minecraft:player.experience", 0, 1, 0, 0)));
+        session.sendPacket(attributes);
+
+        // One base layer that defines every ability, with a survival member's set enabled.
+        AbilityLayer base = new AbilityLayer();
+        base.setLayerType(AbilityLayer.Type.BASE);
+        base.getAbilitiesSet().addAll(EnumSet.allOf(Ability.class));
+        base.getAbilityValues().addAll(EnumSet.of(Ability.BUILD, Ability.MINE, Ability.DOORS_AND_SWITCHES,
+                Ability.OPEN_CONTAINERS, Ability.ATTACK_PLAYERS, Ability.ATTACK_MOBS));
+        base.setWalkSpeed(0.1f);
+        base.setFlySpeed(0.05f);
+        base.setVerticalFlySpeed(1f);
+
+        UpdateAbilitiesPacket abilities = new UpdateAbilitiesPacket();
+        abilities.setUniqueEntityId(runtimeEntityId);
+        abilities.setPlayerPermission(PlayerPermission.MEMBER);
+        abilities.setCommandPermission(CommandPermission.ANY);
+        abilities.setAbilityLayers(List.of(base));
+        session.sendPacket(abilities);
     }
 
     @Override
     public PacketSignal handle(SetLocalPlayerAsInitializedPacket packet) {
-        PlayStatusPacket spawn = new PlayStatusPacket();
-        spawn.setStatus(PlayStatusPacket.Status.PLAYER_SPAWN);
-        session.sendPacket(spawn);
-
         Logger.info(username + " joined the game.");
+
+        // Only now, with the client past its loading screen, is the player actually in
+        // the world for others to see.
+        players.join(player);
 
         return PacketSignal.HANDLED;
     }
 
+    /**
+     * With server-authoritative movement (see StartGame), the client sends its position
+     * and rotation in one of these every tick, moving or not. The client moves its own
+     * player; the server's job for now is to remember where they are and show everyone
+     * else. Positions aren't checked yet - whatever the client says is accepted.
+     */
+    @Override
+    public PacketSignal handle(PlayerAuthInputPacket packet) {
+        if (player == null) {
+            return PacketSignal.HANDLED;
+        }
+
+        // Checked before the "standing still" shortcut below, since players can start or
+        // stop sneaking without moving.
+        if (packet.getInputData().contains(PlayerAuthInputData.START_SNEAKING)) {
+            player.setSneaking(true);
+            players.broadcastEntityData(player);
+        } else if (packet.getInputData().contains(PlayerAuthInputData.STOP_SNEAKING)) {
+            player.setSneaking(false);
+            players.broadcastEntityData(player);
+        }
+
+        Vector3f position = packet.getPosition();
+        Vector3f rotation = packet.getRotation();
+        if (position.equals(player.getPosition()) && rotation.equals(player.getRotation())) {
+            return PacketSignal.HANDLED; // standing still - nothing new to tell anyone
+        }
+
+        player.setLocation(position, rotation);
+        boolean onGround = packet.getInputData().contains(PlayerAuthInputData.VERTICAL_COLLISION)
+                && packet.getDelta().getY() <= 0;
+        players.broadcastMovement(player, onGround, packet.getTick());
+
+        return PacketSignal.HANDLED;
+    }
+
+    /**
+     * The client sends this whenever its player swings their arm (hitting, mining, or
+     * swinging at nothing), so other players can be shown it. The client's own entity id
+     * in the packet isn't trusted - the swing is always passed on as this player's.
+     */
+    @Override
+    public PacketSignal handle(AnimatePacket packet) {
+        if (player != null && packet.getAction() == AnimatePacket.Action.SWING_ARM) {
+            players.broadcastSwing(player, packet.getSwingSource());
+        }
+        return PacketSignal.HANDLED;
+    }
+
+    /**
+     * A message typed in chat. A leading "/" runs it as a server command (through the same
+     * CommandManager the console uses) instead of broadcasting it - so "/stop" in chat does
+     * the same thing as typing "stop" in the console. Anything else is broadcast to every
+     * player as an ordinary chat message and logged to the console, the same way the
+     * console itself already logs everything else.
+     */
+    @Override
+    public PacketSignal handle(TextPacket packet) {
+        if (player == null || packet.getType() != TextPacket.Type.CHAT) {
+            return PacketSignal.HANDLED;
+        }
+
+        String message = packet.getMessage();
+        if (message == null || message.isBlank()) {
+            return PacketSignal.HANDLED;
+        }
+        message = message.trim();
+
+        if (message.startsWith("/")) {
+            Logger.info(username + " issued command: " + message);
+            netherrack.getCommandManager().dispatch(netherrack, message.substring(1));
+        } else {
+            Logger.info("<" + username + "> " + message);
+            players.broadcastChat(player, message);
+        }
+
+        return PacketSignal.HANDLED;
+    }
+
+    /** Called once the connection has closed, for whatever reason. */
+    public void onDisconnect() {
+        if (player != null) {
+            players.leave(player);
+        }
+    }
+
     private void sendStartGame() {
-        // Both of these must also be sent before StartGame (confirmed by Nukkit's and
-        // AllayMC's own join sequences, and by VoxelShapesPacket's own class doc comment:
-        // "This packet should always be sent before StartGamePacket"). We'd never sent
-        // either at all - missing shape data specifically could easily be why the client's
-        // own block-shape lookups were failing with a "Block"-category error regardless of
-        // whether any chunks were ever sent, since the table they'd resolve against was
-        // never populated in the first place.
-        JigsawStructureDataPacket jigsawData = new JigsawStructureDataPacket();
-        jigsawData.setJigsawStructureDataTag(NbtMap.EMPTY);
-        session.sendPacket(jigsawData);
-
-        VoxelShapesPacket voxelShapes = new VoxelShapesPacket();
-        voxelShapes.setShapes(Collections.emptyList());
-        voxelShapes.setNameMap(Collections.emptyMap());
-        voxelShapes.setCustomShapeCount(0);
-        session.sendPacket(voxelShapes);
-
         // Must be sent before StartGame, not after - AllayMC's own comment on the
         // equivalent code is explicit that chunks get ignored and the client can't join
         // without this preceding it.
         //
-        // Explicitly declaring a 0-256 height range (the classic pre-1.18 Bedrock height,
-        // 16 sub-chunks) rather than leaving this empty - an empty definitions list means
-        // the client falls back to its own default modern overworld bounds (-64 to 319),
-        // which uses a completely different chunk-loading protocol (the client requests
-        // individual sub-chunks via SubChunkRequestPacket) than the single-packet, inline
-        // sub-chunk model (LevelChunkPacket.subChunksLength) Netherrack currently sends
-        // chunks with. That mismatch is almost certainly what the client's "Block" error
-        // was actually about - not the block identity scheme itself.
-        DimensionDataPacket dimensionData = new DimensionDataPacket();
-        dimensionData.getDefinitions().add(
-                new DimensionDefinition("minecraft:overworld", 256, 0, 2, 0, null, "minecraft:plains"));
-        session.sendPacket(dimensionData);
+        // Empty definitions list: the client keeps its default overworld bounds (-64 to
+        // 319), which is what ChunkEncoder sends (all 24 sub-chunks inline in each
+        // LevelChunkPacket). Clients join fine with this; the "Block" error on joining
+        // turned out to be caused by an empty SyncEntityPropertyPacket, not the dimension
+        // height. If this ever declares different bounds, ChunkEncoder's sub-chunk range
+        // has to change to match.
+        session.sendPacket(new DimensionDataPacket());
+
+        // Both of these also have to arrive before StartGame on current clients - without the
+        // jigsaw data the client disconnects with "Missing structure data from server". Empty
+        // is enough since Netherrack doesn't generate any structures; GeyserMC sends the same
+        // empty shape for both. Every list is set explicitly rather than left to defaults so
+        // nothing reaches the encoder as null.
+        JigsawStructureDataPacket jigsawData = new JigsawStructureDataPacket();
+        jigsawData.setJigsawStructureDataTag(NbtMap.builder()
+                .putList("processors", NbtType.COMPOUND, new ArrayList<>())
+                .putList("template_pools", NbtType.COMPOUND, new ArrayList<>())
+                .putList("jigsaws", NbtType.COMPOUND, new ArrayList<>())
+                .putList("structure_sets", NbtType.COMPOUND, new ArrayList<>())
+                .build());
+        session.sendPacket(jigsawData);
+
+        VoxelShapesPacket voxelShapes = new VoxelShapesPacket();
+        voxelShapes.setShapes(new ArrayList<>());
+        voxelShapes.setNameMap(new HashMap<>());
+        session.sendPacket(voxelShapes);
+
+        // Client packets that carry item stacks can only be decoded once the codec knows
+        // the item ids, so this has to be in place before the client starts sending them.
+        session.getPeer().getCodecHelper().setItemDefinitions(vanillaData.getItemRegistry());
 
         StartGamePacket startGame = new StartGamePacket();
 
@@ -416,30 +623,39 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         startGame.setServerId("");
         startGame.setWorldId("");
         startGame.setScenarioId("");
+        // Both are written unconditionally by the encoder, so leaving either null makes
+        // StartGame fail to encode - and since that failure is silent, the client just
+        // never hears StartGame and sits on the loading screen forever.
+        startGame.setOwnerId("");
+        startGame.setPlayerPropertyData(NbtMap.EMPTY);
+        startGame.getItemDefinitions().addAll(vanillaData.getItemDefinitions());
 
         session.sendPacket(startGame);
 
-        CompressedBiomeDefinitionListPacket biomes = new CompressedBiomeDefinitionListPacket();
-        biomes.setDefinitions(vanillaData.getBiomeDefinitions());
+        BiomeDefinitionListPacket biomes = new BiomeDefinitionListPacket();
+        biomes.setBiomes(vanillaData.getBiomeDefinitions());
         session.sendPacket(biomes);
 
         AvailableEntityIdentifiersPacket entities = new AvailableEntityIdentifiersPacket();
         entities.setIdentifiers(vanillaData.getEntityIdentifiers());
         session.sendPacket(entities);
 
+        // Clients don't have a built-in item list any more - every item (block items
+        // included) has to come from the server, or the client can't finish joining.
+        ItemComponentPacket items = new ItemComponentPacket();
+        items.getItems().addAll(vanillaData.getItemDefinitions());
+        session.sendPacket(items);
+
         // The rest of these are part of the standard join sequence real clients expect to
         // see regardless of whether a server actually has anything custom to put in them -
-        // all empty/default here since Netherrack doesn't have custom items, crafting
-        // recipes, armor trims, or entity properties yet. Every list field on these packet
-        // classes already defaults to an empty list except SyncEntityPropertyPacket's
-        // NbtMap, which needs setting explicitly or risks the same null-field encoder
-        // crash the worldTemplateId bug was.
-        session.sendPacket(new ItemComponentPacket());
+        // all empty/default here since Netherrack doesn't have a creative inventory,
+        // crafting recipes or armor trims yet.
+        //
+        // SyncEntityProperty is deliberately not sent: vanilla sends one per entity type
+        // that has properties ({type, properties...}), and an empty one makes the client
+        // reject the join with a generic "Block" error. It belongs here again once there are
+        // entities with real property data to send.
         session.sendPacket(new CreativeContentPacket());
-
-        SyncEntityPropertyPacket entityProperties = new SyncEntityPropertyPacket();
-        entityProperties.setData(NbtMap.EMPTY);
-        session.sendPacket(entityProperties);
 
         // cleanRecipes left false (the default) deliberately - true would clear the
         // client's own built-in vanilla recipes, and we have nothing to replace them with
@@ -463,17 +679,13 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
     private void sendChunk(int chunkX, int chunkZ) {
         Chunk chunk = world.getChunk(chunkX, chunkZ);
 
-        // Only sub-chunk 0 (world Y 0-15) - everything Netherrack currently generates
-        // (the single grass layer) fits inside it.
-        ByteBuf subChunk = ChunkEncoder.encodeSubChunk(chunk, 0);
-
         LevelChunkPacket packet = new LevelChunkPacket();
         packet.setChunkX(chunkX);
         packet.setChunkZ(chunkZ);
-        packet.setSubChunksLength(1);
+        packet.setSubChunksLength(ChunkEncoder.SUB_CHUNK_COUNT);
         packet.setCachingEnabled(false);
         packet.setRequestSubChunks(false);
-        packet.setData(subChunk);
+        packet.setData(ChunkEncoder.encodeChunk(chunk));
 
         session.sendPacket(packet);
     }

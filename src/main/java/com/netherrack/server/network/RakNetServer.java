@@ -1,7 +1,10 @@
 package com.netherrack.server.network;
 
+import com.netherrack.server.Netherrack;
 import com.netherrack.server.ServerConfig;
+import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.util.Logger;
+import com.netherrack.server.util.NettyLogBridge;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
@@ -42,7 +45,7 @@ public class RakNetServer {
         this.config = config;
     }
 
-    public void start(World world) {
+    public void start(World world, PlayerManager players, Netherrack netherrack) {
         String ip = config.get("server-ip", "0.0.0.0");
         int port = config.getInt("server-port", 19132);
 
@@ -67,11 +70,17 @@ public class RakNetServer {
                         InetSocketAddress remote = (InetSocketAddress) session.getSocketAddress();
                         Logger.info("Incoming RakNet connection from " + remote.getAddress().getHostAddress() + ":" + remote.getPort());
 
-                        NetherrackPacketHandler handler = new NetherrackPacketHandler(session, world);
+                        // Logs every packet in and out of this session (at trace level, so
+                        // only visible with debug=true).
+                        session.setLogging(NettyLogBridge.isDebug());
+
+                        NetherrackPacketHandler handler = new NetherrackPacketHandler(session, world, players, netherrack);
                         session.setPacketHandler(handler);
 
-                        session.getPeer().getChannel().closeFuture().addListener(f ->
-                                Logger.info(handler.getDisplayName() + " disconnected."));
+                        session.getPeer().getChannel().closeFuture().addListener(f -> {
+                            handler.onDisconnect();
+                            Logger.info(handler.getDisplayName() + " disconnected.");
+                        });
                     }
                 })
                 .bind(new InetSocketAddress(ip, port));
