@@ -3,14 +3,14 @@ package com.netherrack.server.command;
 import com.netherrack.server.Netherrack;
 import com.netherrack.server.player.GameModes;
 import com.netherrack.server.player.Player;
-import com.netherrack.server.setup.Lang;
-import com.netherrack.server.util.Logger;
 import org.cloudburstmc.protocol.bedrock.data.GameType;
 
+import java.util.List;
+
 /**
- * gamemode &lt;survival|creative|adventure&gt; &lt;player&gt; - switches a player's game mode.
- * The player is named rather than assumed, since commands run as the console even when
- * typed in chat.
+ * gamemode &lt;survival|creative|adventure|spectator|default&gt; [player] - switches a player's game
+ * mode. "default" (or "d") is the server's, from server.properties. A player running it
+ * without a name switches their own; the console has to name someone.
  */
 public class GamemodeCommand implements Command {
 
@@ -20,27 +20,42 @@ public class GamemodeCommand implements Command {
     }
 
     @Override
-    public String getHelpLangKey() {
-        return "command.help.gamemode";
+    public List<List<CommandParameter>> getOverloads() {
+        return List.of(List.of(
+                CommandParameter.choice("gameMode", false, "GameMode", List.of("survival", "creative", "adventure", "spectator", "default")),
+                CommandParameter.player("player", true)));
     }
 
     @Override
-    public void execute(Netherrack server, String[] args) {
-        if (args.length != 2) {
-            Logger.info(Lang.current.get("command.gamemode.usage"));
+    public int getPermissionLevel() {
+        return 2;
+    }
+
+    @Override
+    public void execute(Netherrack server, CommandSender sender, String[] args) {
+        if (args.length < 1 || args.length > 2 || (args.length == 1 && sender.getPlayer() == null)) {
+            sender.sendFailure("commands.generic.usage", "/gamemode <survival|creative|adventure|spectator|default> [player]");
             return;
         }
-        GameType gameMode = GameModes.parse(args[0]);
+        boolean serverDefault = args[0].equalsIgnoreCase("default") || args[0].equalsIgnoreCase("d");
+        GameType gameMode = serverDefault ? server.getDefaultGameMode() : GameModes.parse(args[0]);
         if (gameMode == null) {
-            Logger.info(Lang.current.get("command.gamemode.unknown_mode", args[0]));
+            sender.sendFailure("commands.gamemode.fail.invalid", args[0]);
             return;
         }
-        Player player = server.getPlayerManager().getPlayer(args[1]);
+        Player player = args.length == 2 ? server.getPlayerManager().getPlayer(args[1]) : sender.getPlayer();
         if (player == null) {
-            Logger.info(Lang.current.get("command.gamemode.unknown_player", args[1]));
+            sender.sendFailure("commands.generic.player.notFound");
             return;
         }
-        player.setGameMode(gameMode);
-        Logger.info(Lang.current.get("command.gamemode.changed", player.getUsername(), GameModes.name(gameMode)));
+
+        server.getPlayerManager().changeGameMode(player, gameMode);
+        String modeName = "%createWorldScreen.gameMode." + GameModes.name(gameMode);
+        if (player == sender.getPlayer()) {
+            sender.sendSuccess("commands.gamemode.success.self", modeName);
+        } else {
+            sender.sendSuccess("commands.gamemode.success.other", modeName, player.getUsername());
+            player.sendTranslation("gameMode.changed", modeName);
+        }
     }
 }

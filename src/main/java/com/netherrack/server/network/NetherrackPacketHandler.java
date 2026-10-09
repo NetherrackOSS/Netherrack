@@ -2,9 +2,11 @@ package com.netherrack.server.network;
 
 import com.netherrack.server.Netherrack;
 import com.netherrack.server.block.Block;
+import com.netherrack.server.command.AvailableCommands;
+import com.netherrack.server.command.PlayerCommandSender;
 import com.netherrack.server.entity.EntityIds;
 import com.netherrack.server.entity.ItemEntities;
-import com.netherrack.server.player.GameModes;
+import com.netherrack.server.player.Permission;
 import com.netherrack.server.player.Player;
 import com.netherrack.server.player.PlayerInventory;
 import com.netherrack.server.player.PlayerManager;
@@ -24,12 +26,11 @@ import org.cloudburstmc.protocol.bedrock.data.EduSharedUriResource;
 import org.cloudburstmc.protocol.bedrock.data.GamePublishSetting;
 import org.cloudburstmc.protocol.bedrock.data.AttributeData;
 import org.cloudburstmc.protocol.bedrock.data.BuildPlatform;
-import org.cloudburstmc.protocol.bedrock.data.GameType;
 import org.cloudburstmc.protocol.bedrock.data.NetworkPermissions;
 import org.cloudburstmc.protocol.bedrock.data.PacketCompressionAlgorithm;
 import org.cloudburstmc.protocol.bedrock.data.PlayerActionType;
+import org.cloudburstmc.protocol.bedrock.data.command.CommandOriginData;
 import org.cloudburstmc.protocol.bedrock.data.PlayerAuthInputData;
-import org.cloudburstmc.protocol.bedrock.data.PlayerPermission;
 import org.cloudburstmc.protocol.bedrock.data.SpawnBiomeType;
 import org.cloudburstmc.protocol.bedrock.data.WorldType;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerSlotType;
@@ -52,6 +53,7 @@ import org.cloudburstmc.protocol.bedrock.packet.BedrockPacketHandler;
 import org.cloudburstmc.protocol.bedrock.packet.BiomeDefinitionListPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ChunkRadiusUpdatedPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ClientToServerHandshakePacket;
+import org.cloudburstmc.protocol.bedrock.packet.CommandRequestPacket;
 import org.cloudburstmc.protocol.bedrock.packet.CraftingDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.CreativeContentPacket;
 import org.cloudburstmc.protocol.bedrock.packet.DimensionDataPacket;
@@ -310,7 +312,10 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
                 + spawnX + " " + spawnY + ".0 " + spawnZ + " / " + world.getName());
 
         player = new Player(session, username, UUID.fromString(uuid), xuid, runtimeEntityId,
-                skin, deviceId, buildPlatform, spawnPosition, defaultGameMode());
+                skin, deviceId, buildPlatform, spawnPosition, netherrack.getDefaultGameMode());
+        // From permissions.json by XUID; players not signed into Xbox Live get the default.
+        Permission permission = netherrack.getPermissions().of(xuid);
+        player.setPermission(permission, netherrack.commandLevelFor(permission));
 
         PlayStatusPacket loginSuccess = new PlayStatusPacket();
         loginSuccess.setStatus(PlayStatusPacket.Status.LOGIN_SUCCESS);
@@ -406,6 +411,8 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         session.sendPacket(attributes);
 
         session.sendPacket(player.createAbilities());
+        // The commands their client suggests as they type "/": those their level allows.
+        session.sendPacket(AvailableCommands.forLevel(netherrack.getCommandManager(), player.getCommandLevel()));
 
         // An empty inventory, until there's player data to load one from.
         sendInventory();
@@ -502,14 +509,35 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         message = message.trim();
 
         if (message.startsWith("/")) {
-            Logger.info(username + " issued command: " + message);
-            netherrack.getCommandManager().dispatch(netherrack, message.substring(1));
+            runCommand(message, null);
         } else {
             Logger.info("<" + username + "> " + message);
             players.broadcastChat(player, message);
         }
 
         return PacketSignal.HANDLED;
+    }
+
+    /**
+     * A command typed in chat. Vanilla clients send these as their own packet rather than
+     * as a chat message starting with "/".
+     */
+    @Override
+    public PacketSignal handle(CommandRequestPacket packet) {
+        if (player != null && packet.getCommand() != null && !packet.getCommand().isBlank()) {
+            runCommand(packet.getCommand().trim(), packet.getCommandOriginData());
+        }
+        return PacketSignal.HANDLED;
+    }
+
+    /**
+     * Runs a command as this player, if their permission level allows it (see
+     * CommandManager). The origin is the request's, which replies answer to.
+     */
+    private void runCommand(String command, CommandOriginData origin) {
+        Logger.info(username + " issued command: " + command);
+        String input = command.startsWith("/") ? command.substring(1) : command;
+        netherrack.getCommandManager().dispatch(netherrack, new PlayerCommandSender(player, origin), input);
     }
 
     /**
@@ -684,17 +712,6 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         return PacketSignal.HANDLED;
     }
 
-    /** The game mode players join in, from "gamemode" in server.properties. */
-    private GameType defaultGameMode() {
-        String configured = netherrack.getConfig().get("gamemode", "survival");
-        GameType gameMode = GameModes.parse(configured);
-        if (gameMode == null) {
-            Logger.warn("Unknown gamemode \"" + configured + "\" in server.properties, using survival.");
-            return GameType.SURVIVAL;
-        }
-        return gameMode;
-    }
-
     /** Called once the connection has closed, for whatever reason. */
     public void onDisconnect() {
         if (player != null) {
@@ -753,7 +770,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         startGame.setCustomBiomeName("");
         startGame.setDimensionId(0); // overworld
         startGame.setGeneratorId(2); // flat
-        startGame.setLevelGameType(defaultGameMode());
+        startGame.setLevelGameType(netherrack.getDefaultGameMode());
         startGame.setDifficulty(1);
         startGame.setDefaultSpawn(Vector3i.from(spawnPosition.getFloorX(), spawnPosition.getFloorY(), spawnPosition.getFloorZ()));
         startGame.setAchievementsDisabled(true);
@@ -774,7 +791,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         startGame.setBonusChestEnabled(false);
         startGame.setStartingWithMap(false);
         startGame.setTrustingPlayers(true);
-        startGame.setDefaultPlayerPermission(PlayerPermission.MEMBER);
+        startGame.setDefaultPlayerPermission(netherrack.getPermissions().getDefault().toPlayerPermission());
         startGame.setServerChunkTickRange(4);
         startGame.setBehaviorPackLocked(false);
         startGame.setResourcePackLocked(false);

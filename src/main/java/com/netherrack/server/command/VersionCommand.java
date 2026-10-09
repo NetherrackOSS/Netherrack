@@ -2,7 +2,6 @@ package com.netherrack.server.command;
 
 import com.netherrack.server.Netherrack;
 import com.netherrack.server.setup.Lang;
-import com.netherrack.server.util.Logger;
 
 public class VersionCommand implements Command {
 
@@ -11,13 +10,14 @@ public class VersionCommand implements Command {
         return "version";
     }
 
+    /** Vanilla has no version command, so there's no description of it for the client to word. */
     @Override
-    public String getHelpLangKey() {
-        return "command.help.version";
+    public String getDescription() {
+        return Lang.current.get("command.description.version");
     }
 
     @Override
-    public void execute(Netherrack server, String[] args) {
-        Logger.info(Lang.current.get("command.version", Netherrack.VERSION));
+    public void execute(Netherrack server, CommandSender sender, String[] args) {
+        sender.sendSuccess("command.version", Netherrack.VERSION);
     }
 }
