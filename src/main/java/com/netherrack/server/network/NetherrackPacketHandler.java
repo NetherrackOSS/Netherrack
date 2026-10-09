@@ -2,12 +2,17 @@ package com.netherrack.server.network;
 
 import com.netherrack.server.Netherrack;
 import com.netherrack.server.block.Block;
+import com.netherrack.server.entity.EntityIds;
+import com.netherrack.server.entity.ItemEntities;
+import com.netherrack.server.player.GameModes;
 import com.netherrack.server.player.Player;
+import com.netherrack.server.player.PlayerInventory;
 import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.player.SkinParser;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.world.Chunk;
 import com.netherrack.server.world.World;
+import io.netty.buffer.Unpooled;
 import org.cloudburstmc.math.vector.Vector2f;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.math.vector.Vector3i;
@@ -17,23 +22,32 @@ import org.cloudburstmc.protocol.bedrock.data.AuthoritativeMovementMode;
 import org.cloudburstmc.protocol.bedrock.data.ChatRestrictionLevel;
 import org.cloudburstmc.protocol.bedrock.data.EduSharedUriResource;
 import org.cloudburstmc.protocol.bedrock.data.GamePublishSetting;
-import org.cloudburstmc.protocol.bedrock.data.Ability;
-import org.cloudburstmc.protocol.bedrock.data.AbilityLayer;
 import org.cloudburstmc.protocol.bedrock.data.AttributeData;
 import org.cloudburstmc.protocol.bedrock.data.BuildPlatform;
 import org.cloudburstmc.protocol.bedrock.data.GameType;
 import org.cloudburstmc.protocol.bedrock.data.NetworkPermissions;
 import org.cloudburstmc.protocol.bedrock.data.PacketCompressionAlgorithm;
+import org.cloudburstmc.protocol.bedrock.data.PlayerActionType;
 import org.cloudburstmc.protocol.bedrock.data.PlayerAuthInputData;
 import org.cloudburstmc.protocol.bedrock.data.PlayerPermission;
 import org.cloudburstmc.protocol.bedrock.data.SpawnBiomeType;
 import org.cloudburstmc.protocol.bedrock.data.WorldType;
-import org.cloudburstmc.protocol.bedrock.data.command.CommandPermission;
+import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerSlotType;
+import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerType;
+import org.cloudburstmc.protocol.bedrock.data.inventory.FullContainerName;
+import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequest;
+import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequestSlotData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.transaction.InventoryActionData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.transaction.InventorySource;
+import org.cloudburstmc.protocol.bedrock.data.inventory.transaction.InventoryTransactionType;
+import org.cloudburstmc.protocol.bedrock.data.inventory.transaction.LegacySetItemSlotData;
 import org.cloudburstmc.protocol.bedrock.data.skin.SerializedSkin;
 import org.cloudburstmc.nbt.NbtMap;
 import org.cloudburstmc.nbt.NbtType;
 import org.cloudburstmc.protocol.bedrock.packet.AnimatePacket;
 import org.cloudburstmc.protocol.bedrock.packet.AvailableEntityIdentifiersPacket;
+import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacketHandler;
 import org.cloudburstmc.protocol.bedrock.packet.BiomeDefinitionListPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ChunkRadiusUpdatedPacket;
@@ -41,12 +55,19 @@ import org.cloudburstmc.protocol.bedrock.packet.ClientToServerHandshakePacket;
 import org.cloudburstmc.protocol.bedrock.packet.CraftingDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.CreativeContentPacket;
 import org.cloudburstmc.protocol.bedrock.packet.DimensionDataPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ContainerClosePacket;
+import org.cloudburstmc.protocol.bedrock.packet.ContainerOpenPacket;
+import org.cloudburstmc.protocol.bedrock.packet.InteractPacket;
+import org.cloudburstmc.protocol.bedrock.packet.InventoryTransactionPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ItemComponentPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ItemStackRequestPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ItemStackResponsePacket;
 import org.cloudburstmc.protocol.bedrock.packet.JigsawStructureDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LevelChunkPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LoginPacket;
 import org.cloudburstmc.protocol.bedrock.packet.NetworkChunkPublisherUpdatePacket;
 import org.cloudburstmc.protocol.bedrock.packet.NetworkSettingsPacket;
+import org.cloudburstmc.protocol.bedrock.packet.PlayerActionPacket;
 import org.cloudburstmc.protocol.bedrock.packet.PlayerAuthInputPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ServerToClientHandshakePacket;
 import org.cloudburstmc.protocol.bedrock.packet.PlayStatusPacket;
@@ -60,7 +81,6 @@ import org.cloudburstmc.protocol.bedrock.packet.SetLocalPlayerAsInitializedPacke
 import org.cloudburstmc.protocol.bedrock.packet.StartGamePacket;
 import org.cloudburstmc.protocol.bedrock.packet.TextPacket;
 import org.cloudburstmc.protocol.bedrock.packet.TrimDataPacket;
-import org.cloudburstmc.protocol.bedrock.packet.UpdateAbilitiesPacket;
 import org.cloudburstmc.protocol.bedrock.packet.UpdateAttributesPacket;
 import org.cloudburstmc.protocol.bedrock.packet.VoxelShapesPacket;
 import org.cloudburstmc.protocol.bedrock.util.ChainValidationResult;
@@ -73,13 +93,11 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Drives one player's login sequence:
@@ -99,17 +117,17 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class NetherrackPacketHandler implements BedrockPacketHandler {
 
-    private static final AtomicLong ENTITY_ID_COUNTER = new AtomicLong(1);
-
     /** How many chunks out from spawn to actually send, regardless of what the client requests. */
     private static final int MAX_CHUNK_RADIUS = 4;
 
     private final BedrockServerSession session;
     private final World world;
     private final PlayerManager players;
+    private final BlockInteraction blockInteraction;
+    private final ItemEntities itemEntities;
     private final Netherrack netherrack;
     private final VanillaData vanillaData = VanillaData.get();
-    private final long runtimeEntityId = ENTITY_ID_COUNTER.getAndIncrement();
+    private final long runtimeEntityId = EntityIds.next();
 
     private volatile String username;
     private volatile String uuid;
@@ -121,12 +139,15 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
     private volatile String deviceId = "";
     private volatile BuildPlatform buildPlatform = BuildPlatform.UNKNOWN;
     private volatile Player player;
+    private volatile boolean inventoryOpen;
 
     public NetherrackPacketHandler(BedrockServerSession session, World world, PlayerManager players, Netherrack netherrack) {
         this.session = session;
         this.world = world;
         this.players = players;
         this.netherrack = netherrack;
+        this.itemEntities = netherrack.getItemEntities();
+        this.blockInteraction = new BlockInteraction(world, players, itemEntities);
     }
 
     /**
@@ -289,7 +310,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
                 + spawnX + " " + spawnY + ".0 " + spawnZ + " / " + world.getName());
 
         player = new Player(session, username, UUID.fromString(uuid), xuid, runtimeEntityId,
-                skin, deviceId, buildPlatform, spawnPosition);
+                skin, deviceId, buildPlatform, spawnPosition, defaultGameMode());
 
         PlayStatusPacket loginSuccess = new PlayStatusPacket();
         loginSuccess.setStatus(PlayStatusPacket.Status.LOGIN_SUCCESS);
@@ -384,22 +405,17 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
                 new AttributeData("minecraft:player.experience", 0, 1, 0, 0)));
         session.sendPacket(attributes);
 
-        // One base layer that defines every ability, with a survival member's set enabled.
-        AbilityLayer base = new AbilityLayer();
-        base.setLayerType(AbilityLayer.Type.BASE);
-        base.getAbilitiesSet().addAll(EnumSet.allOf(Ability.class));
-        base.getAbilityValues().addAll(EnumSet.of(Ability.BUILD, Ability.MINE, Ability.DOORS_AND_SWITCHES,
-                Ability.OPEN_CONTAINERS, Ability.ATTACK_PLAYERS, Ability.ATTACK_MOBS));
-        base.setWalkSpeed(0.1f);
-        base.setFlySpeed(0.05f);
-        base.setVerticalFlySpeed(1f);
+        session.sendPacket(player.createAbilities());
 
-        UpdateAbilitiesPacket abilities = new UpdateAbilitiesPacket();
-        abilities.setUniqueEntityId(runtimeEntityId);
-        abilities.setPlayerPermission(PlayerPermission.MEMBER);
-        abilities.setCommandPermission(CommandPermission.ANY);
-        abilities.setAbilityLayers(List.of(base));
-        session.sendPacket(abilities);
+        // An empty inventory, until there's player data to load one from.
+        sendInventory();
+    }
+
+    /** Shows the client its whole inventory as the server has it. */
+    private void sendInventory() {
+        for (BedrockPacket packet : player.getInventory().contentPackets()) {
+            session.sendPacket(packet);
+        }
     }
 
     @Override
@@ -409,6 +425,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         // Only now, with the client past its loading screen, is the player actually in
         // the world for others to see.
         players.join(player);
+        itemEntities.showAll(player);
 
         return PacketSignal.HANDLED;
     }
@@ -425,8 +442,11 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             return PacketSignal.HANDLED;
         }
 
-        // Checked before the "standing still" shortcut below, since players can start or
-        // stop sneaking without moving.
+        // Checked before the "standing still" shortcut below, since players can break
+        // blocks and start or stop sneaking without moving.
+        if (!packet.getPlayerActions().isEmpty()) {
+            blockInteraction.handleActions(player, packet.getPlayerActions());
+        }
         if (packet.getInputData().contains(PlayerAuthInputData.START_SNEAKING)) {
             player.setSneaking(true);
             players.broadcastEntityData(player);
@@ -492,9 +512,193 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         return PacketSignal.HANDLED;
     }
 
+    /**
+     * Using the held item (an "item use" transaction): a right click on a block (action
+     * type 0) places the held block against it, and using armor - in the air (action type
+     * 1) or on a block - puts it on, as vanilla does.
+     * <p>
+     * A "normal" transaction is the client throwing items out from the hotbar (pressing
+     * Q), which it has already done on its side: one action takes the items out of an
+     * inventory slot, the other puts them into the world.
+     * <p>
+     * Either may carry a legacy request: slots the client already changed on its own, and
+     * will go on naming by the request's id until it's answered (see
+     * PlayerInventory.legacyResponse). After either, the client is shown its inventory as
+     * the server has it, whether or not what it did was valid.
+     */
+    @Override
+    public PacketSignal handle(InventoryTransactionPacket packet) {
+        if (player == null) {
+            return PacketSignal.HANDLED;
+        }
+        PlayerInventory inventory = player.getInventory();
+        List<ItemData> armorBefore = inventory.getArmor();
+        boolean changedInventory = false;
+
+        if (packet.getTransactionType() == InventoryTransactionType.ITEM_USE
+                && (packet.getActionType() == 0 || packet.getActionType() == 1)) {
+            int heldId = packet.getItemInHand() != null && packet.getItemInHand().getDefinition() != null
+                    ? packet.getItemInHand().getDefinition().getRuntimeId() : 0;
+            if (inventory.equipHeld(packet.getHotbarSlot(), heldId)) {
+                changedInventory = true;
+            } else if (packet.getActionType() == 0) {
+                blockInteraction.handleItemUse(player, packet);
+            }
+        } else if (packet.getTransactionType() == InventoryTransactionType.NORMAL) {
+            throwFromHotbar(packet.getActions());
+            changedInventory = true;
+        }
+
+        if (packet.getLegacyRequestId() != 0) {
+            ItemStackResponsePacket response = new ItemStackResponsePacket();
+            response.getEntries().add(inventory.legacyResponse(packet.getLegacyRequestId(),
+                    legacySlots(packet.getLegacySlots())));
+            session.sendPacket(response);
+            changedInventory = true;
+        }
+        if (changedInventory) {
+            sendInventory();
+        }
+        if (!inventory.getArmor().equals(armorBefore)) {
+            players.broadcastArmor(player);
+        }
+        return PacketSignal.HANDLED;
+    }
+
+    /**
+     * A legacy request's slots as item stack request slots. The containers arrive as their
+     * network ids, which differ from the library's ContainerSlotType order, so the codec's
+     * own table translates them.
+     */
+    private List<ItemStackRequestSlotData> legacySlots(List<LegacySetItemSlotData> legacySlots) {
+        List<ItemStackRequestSlotData> slots = new ArrayList<>();
+        for (LegacySetItemSlotData legacy : legacySlots) {
+            ContainerSlotType container = session.getPeer().getCodecHelper()
+                    .readContainerSlotType(Unpooled.wrappedBuffer(new byte[]{(byte) legacy.getContainerId()}));
+            if (container == null) {
+                continue;
+            }
+            for (byte slot : legacy.getSlots()) {
+                slots.add(new ItemStackRequestSlotData(container, slot, 0, new FullContainerName(container, null)));
+            }
+        }
+        return slots;
+    }
+
+    /** The client asking to move items around its inventory screen - see PlayerInventory. */
+    @Override
+    public PacketSignal handle(ItemStackRequestPacket packet) {
+        if (player == null) {
+            return PacketSignal.HANDLED;
+        }
+        List<ItemData> armorBefore = player.getInventory().getArmor();
+        ItemStackResponsePacket response = new ItemStackResponsePacket();
+        for (ItemStackRequest request : packet.getRequests()) {
+            response.getEntries().add(player.getInventory().handle(request, player.isCreative()));
+        }
+        session.sendPacket(response);
+        throwDroppedItems();
+        if (!player.getInventory().getArmor().equals(armorBefore)) {
+            players.broadcastArmor(player);
+        }
+        return PacketSignal.HANDLED;
+    }
+
+    private void throwFromHotbar(List<InventoryActionData> actions) {
+        InventoryActionData intoWorld = null;
+        InventoryActionData fromSlot = null;
+        for (InventoryActionData action : actions) {
+            InventorySource source = action.getSource();
+            if (source.getType() == InventorySource.Type.WORLD_INTERACTION && action.getSlot() == 0) {
+                intoWorld = action;
+            } else if (source.getType() == InventorySource.Type.CONTAINER && source.getContainerId() == 0) {
+                fromSlot = action;
+            }
+        }
+        if (actions.size() != 2 || intoWorld == null || fromSlot == null || fromSlot.getFromItem().isNull()) {
+            Logger.debug("Ignored an inventory transaction from " + username + " that isn't a throw: " + actions);
+            return;
+        }
+        player.getInventory().throwFromSlot(fromSlot.getSlot(),
+                fromSlot.getFromItem().getDefinition().getRuntimeId(), intoWorld.getToItem().getCount());
+        throwDroppedItems();
+    }
+
+    /** Puts whatever the player's inventory threw out into the world, flying the way they look. */
+    private void throwDroppedItems() {
+        for (ItemData item : player.getInventory().takeDropped()) {
+            itemEntities.throwFrom(player, item);
+        }
+    }
+
+    /**
+     * The client opening its own inventory screen. It shows the screen only once the
+     * server answers with ContainerOpen, which vanilla places at the player's feet.
+     */
+    @Override
+    public PacketSignal handle(InteractPacket packet) {
+        if (player == null || packet.getAction() != InteractPacket.Action.OPEN_INVENTORY || inventoryOpen) {
+            return PacketSignal.HANDLED;
+        }
+        inventoryOpen = true;
+
+        ContainerOpenPacket open = new ContainerOpenPacket();
+        open.setId((byte) 0);
+        open.setType(ContainerType.INVENTORY);
+        open.setBlockPosition(player.getFeetPosition().toInt());
+        open.setUniqueEntityId(-1);
+        session.sendPacket(open);
+        return PacketSignal.HANDLED;
+    }
+
+    /**
+     * The client closing a screen. The server confirms it, and for the inventory screen
+     * puts what was left on the cursor and in the crafting grid back into the inventory.
+     */
+    @Override
+    public PacketSignal handle(ContainerClosePacket packet) {
+        if (player == null) {
+            return PacketSignal.HANDLED;
+        }
+        inventoryOpen = false;
+
+        ContainerClosePacket close = new ContainerClosePacket();
+        close.setId(packet.getId());
+        close.setType(packet.getType());
+        close.setServerInitiated(false);
+        session.sendPacket(close);
+
+        if (packet.getId() == 0 && player.getInventory().returnScreenItems()) {
+            sendInventory();
+            throwDroppedItems();
+        }
+        return PacketSignal.HANDLED;
+    }
+
+    /** Some player actions arrive on their own: a creative player's instant block break is one. */
+    @Override
+    public PacketSignal handle(PlayerActionPacket packet) {
+        if (player != null && packet.getAction() == PlayerActionType.DIMENSION_CHANGE_REQUEST_OR_CREATIVE_DESTROY_BLOCK) {
+            blockInteraction.creativeBreak(player, packet.getBlockPosition());
+        }
+        return PacketSignal.HANDLED;
+    }
+
+    /** The game mode players join in, from "gamemode" in server.properties. */
+    private GameType defaultGameMode() {
+        String configured = netherrack.getConfig().get("gamemode", "survival");
+        GameType gameMode = GameModes.parse(configured);
+        if (gameMode == null) {
+            Logger.warn("Unknown gamemode \"" + configured + "\" in server.properties, using survival.");
+            return GameType.SURVIVAL;
+        }
+        return gameMode;
+    }
+
     /** Called once the connection has closed, for whatever reason. */
     public void onDisconnect() {
         if (player != null) {
+            blockInteraction.stopBreaking();
             players.leave(player);
         }
     }
@@ -534,12 +738,13 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         // Client packets that carry item stacks can only be decoded once the codec knows
         // the item ids, so this has to be in place before the client starts sending them.
         session.getPeer().getCodecHelper().setItemDefinitions(vanillaData.getItemRegistry());
+        session.getPeer().getCodecHelper().setBlockDefinitions(new HashedBlockDefinitions());
 
         StartGamePacket startGame = new StartGamePacket();
 
         startGame.setUniqueEntityId(runtimeEntityId);
         startGame.setRuntimeEntityId(runtimeEntityId);
-        startGame.setPlayerGameType(GameType.SURVIVAL);
+        startGame.setPlayerGameType(player.getGameMode());
         startGame.setPlayerPosition(spawnPosition);
         startGame.setRotation(Vector2f.from(0, 0));
 
@@ -548,7 +753,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         startGame.setCustomBiomeName("");
         startGame.setDimensionId(0); // overworld
         startGame.setGeneratorId(2); // flat
-        startGame.setLevelGameType(GameType.SURVIVAL);
+        startGame.setLevelGameType(defaultGameMode());
         startGame.setDifficulty(1);
         startGame.setDefaultSpawn(Vector3i.from(spawnPosition.getFloorX(), spawnPosition.getFloorY(), spawnPosition.getFloorZ()));
         startGame.setAchievementsDisabled(true);
@@ -601,6 +806,10 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         startGame.setCurrentTick(0);
         startGame.setEnchantmentSeed(0);
         startGame.setBlockPalette(vanillaData.getBlockPalette());
+        // The vanilla blocks defined in the vanilla behavior pack rather than built into the
+        // client - see VanillaData. Without these the client has no such blocks, and warns
+        // about every texture its resource pack has for them.
+        startGame.getBlockProperties().addAll(vanillaData.getDataDrivenBlocks());
         startGame.setMultiplayerCorrelationId(UUID.randomUUID().toString());
         startGame.setInventoriesServerAuthoritative(true);
         startGame.setServerEngine("Netherrack");
@@ -648,14 +857,18 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
         // The rest of these are part of the standard join sequence real clients expect to
         // see regardless of whether a server actually has anything custom to put in them -
-        // all empty/default here since Netherrack doesn't have a creative inventory,
-        // crafting recipes or armor trims yet.
+        // empty/default here since Netherrack doesn't have crafting recipes or armor trims yet.
         //
         // SyncEntityProperty is deliberately not sent: vanilla sends one per entity type
         // that has properties ({type, properties...}), and an empty one makes the client
         // reject the join with a generic "Block" error. It belongs here again once there are
         // entities with real property data to send.
-        session.sendPacket(new CreativeContentPacket());
+        // Sent to everyone whatever their game mode, as vanilla does: it's only usable in
+        // creative, but switching modes doesn't send it again.
+        CreativeContentPacket creative = new CreativeContentPacket();
+        creative.getGroups().addAll(vanillaData.getCreativeGroups());
+        creative.getContents().addAll(vanillaData.getCreativeItems());
+        session.sendPacket(creative);
 
         // cleanRecipes left false (the default) deliberately - true would clear the
         // client's own built-in vanilla recipes, and we have nothing to replace them with

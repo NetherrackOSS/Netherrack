@@ -1,9 +1,11 @@
 package com.netherrack.server;
 
 import com.netherrack.server.command.CommandManager;
+import com.netherrack.server.command.GamemodeCommand;
 import com.netherrack.server.command.HelpCommand;
 import com.netherrack.server.command.StopCommand;
 import com.netherrack.server.command.VersionCommand;
+import com.netherrack.server.entity.ItemEntities;
 import com.netherrack.server.network.RakNetServer;
 import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.setup.Lang;
@@ -18,10 +20,16 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class Netherrack {
 
     public static final String VERSION = "0.1.0";
+
+    /** 20 ticks a second. */
+    private static final long TICK_MILLIS = 50;
 
     private final ServerConfig config;
     private final RakNetServer rakNetServer;
@@ -29,6 +37,8 @@ public class Netherrack {
     private final WorldManager worldManager;
     private final CommandManager commandManager;
     private World world;
+    private ItemEntities itemEntities;
+    private ScheduledExecutorService ticker;
     private volatile boolean running = true;
 
     public Netherrack() {
@@ -40,6 +50,19 @@ public class Netherrack {
         commandManager.register(new StopCommand());
         commandManager.register(new VersionCommand());
         commandManager.register(new HelpCommand());
+        commandManager.register(new GamemodeCommand());
+    }
+
+    public ServerConfig getConfig() {
+        return config;
+    }
+
+    public PlayerManager getPlayerManager() {
+        return playerManager;
+    }
+
+    public ItemEntities getItemEntities() {
+        return itemEntities;
     }
 
     public CommandManager getCommandManager() {
@@ -96,6 +119,8 @@ public class Netherrack {
 
         sleep(150);
         Logger.info(lang.get("server.opening", ip, port));
+        itemEntities = new ItemEntities(world, playerManager);
+        startTicking();
         rakNetServer.start(world, playerManager, this);
 
         sleep(150);
@@ -135,10 +160,28 @@ public class Netherrack {
         sleep(200);
         Logger.info(Lang.current.get("server.saving_level", config.get("level-name", "world")));
         rakNetServer.stop();
+        ticker.shutdownNow();
         sleep(200);
         Logger.info(Lang.current.get("server.closed"));
         running = false;
         System.exit(0);
+    }
+
+    /**
+     * Runs the world 20 times a second, as vanilla does: everything that changes on its
+     * own over time, such as dropped items falling and being picked up. A tick that throws
+     * is logged and the next one runs anyway - an uncaught exception would otherwise stop
+     * the schedule for good.
+     */
+    private void startTicking() {
+        ticker = Executors.newSingleThreadScheduledExecutor(runnable -> new Thread(runnable, "Server tick"));
+        ticker.scheduleAtFixedRate(() -> {
+            try {
+                itemEntities.tick();
+            } catch (Exception e) {
+                Logger.error("Error during the server tick: " + e);
+            }
+        }, TICK_MILLIS, TICK_MILLIS, TimeUnit.MILLISECONDS);
     }
 
     private void sleep(long millis) {

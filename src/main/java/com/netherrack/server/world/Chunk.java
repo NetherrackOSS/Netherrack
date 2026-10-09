@@ -2,8 +2,8 @@ package com.netherrack.server.world;
 
 import com.netherrack.server.block.Block;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * A 16x16 column of blocks, identified by chunk coordinates (block coordinates divided by 16).
@@ -15,7 +15,9 @@ public class Chunk {
 
     private final int chunkX;
     private final int chunkZ;
-    private final Map<Integer, Block> blocks = new HashMap<>();
+    // Concurrent since players break and place blocks from their own network threads,
+    // while other threads may be encoding the chunk to send.
+    private final Map<Integer, Block> blocks = new ConcurrentHashMap<>();
 
     public Chunk(int chunkX, int chunkZ) {
         this.chunkX = chunkX;
