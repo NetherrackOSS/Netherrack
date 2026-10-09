@@ -3,6 +3,8 @@ package com.netherrack.server.network;
 import com.netherrack.server.Netherrack;
 import com.netherrack.server.block.Block;
 import com.netherrack.server.block.Blocks;
+import com.netherrack.server.entity.EntityIds;
+import com.netherrack.server.entity.ItemEntities;
 import com.netherrack.server.player.Player;
 import com.netherrack.server.player.PlayerInventory;
 import com.netherrack.server.player.PlayerManager;
@@ -34,6 +36,8 @@ import org.cloudburstmc.protocol.bedrock.data.command.CommandPermission;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerType;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequest;
+import org.cloudburstmc.protocol.bedrock.data.inventory.transaction.InventoryActionData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.transaction.InventorySource;
 import org.cloudburstmc.protocol.bedrock.data.inventory.transaction.InventoryTransactionType;
 import org.cloudburstmc.protocol.bedrock.data.skin.SerializedSkin;
 import org.cloudburstmc.nbt.NbtMap;
@@ -92,7 +96,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Drives one player's login sequence:
@@ -112,8 +115,6 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class NetherrackPacketHandler implements BedrockPacketHandler {
 
-    private static final AtomicLong ENTITY_ID_COUNTER = new AtomicLong(1);
-
     /** How many chunks out from spawn to actually send, regardless of what the client requests. */
     private static final int MAX_CHUNK_RADIUS = 4;
 
@@ -121,9 +122,10 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
     private final World world;
     private final PlayerManager players;
     private final BlockInteraction blockInteraction;
+    private final ItemEntities itemEntities;
     private final Netherrack netherrack;
     private final VanillaData vanillaData = VanillaData.get();
-    private final long runtimeEntityId = ENTITY_ID_COUNTER.getAndIncrement();
+    private final long runtimeEntityId = EntityIds.next();
 
     private volatile String username;
     private volatile String uuid;
@@ -141,8 +143,9 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         this.session = session;
         this.world = world;
         this.players = players;
-        this.blockInteraction = new BlockInteraction(world, players);
         this.netherrack = netherrack;
+        this.itemEntities = netherrack.getItemEntities();
+        this.blockInteraction = new BlockInteraction(world, players, itemEntities);
     }
 
     /**
@@ -426,8 +429,8 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
      */
     private void giveStarterItems() {
         PlayerInventory inventory = player.getInventory();
-        inventory.set(0, blockItem(Blocks.GRASS_BLOCK, 64));
-        inventory.set(1, blockItem(Blocks.COBBLESTONE, 64));
+        inventory.set(0, vanillaData.blockItem(Blocks.GRASS_BLOCK, 64));
+        inventory.set(1, vanillaData.blockItem(Blocks.COBBLESTONE, 64));
         sendInventory();
     }
 
@@ -438,14 +441,6 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         }
     }
 
-    private ItemData blockItem(Block block, int count) {
-        return ItemData.builder()
-                .definition(vanillaData.getItemRegistry().getDefinition(block.getIdentifier()))
-                .blockDefinition(HashedBlockDefinitions.of(block.getBlockStateHash()))
-                .count(count)
-                .build();
-    }
-
     @Override
     public PacketSignal handle(SetLocalPlayerAsInitializedPacket packet) {
         Logger.info(username + " joined the game.");
@@ -453,6 +448,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         // Only now, with the client past its loading screen, is the player actually in
         // the world for others to see.
         players.join(player);
+        itemEntities.showAll(player);
 
         return PacketSignal.HANDLED;
     }
@@ -544,8 +540,9 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
      * (action type 0), which places the held block against it.
      * <p>
      * A "normal" transaction is the client throwing items out from the hotbar (pressing
-     * Q), which it has already done on its side. There are no dropped items in the world
-     * yet, so it's undone by showing the client its inventory as it really is.
+     * Q), which it has already done on its side: one action takes the items out of an
+     * inventory slot, the other puts them into the world. The client is then shown its
+     * inventory as the server has it, whether or not the throw was valid.
      */
     @Override
     public PacketSignal handle(InventoryTransactionPacket packet) {
@@ -555,6 +552,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         if (packet.getTransactionType() == InventoryTransactionType.ITEM_USE && packet.getActionType() == 0) {
             blockInteraction.handleItemUse(player, packet);
         } else if (packet.getTransactionType() == InventoryTransactionType.NORMAL) {
+            throwFromHotbar(packet.getActions());
             sendInventory();
         }
         return PacketSignal.HANDLED;
@@ -571,7 +569,35 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             response.getEntries().add(player.getInventory().handle(request));
         }
         session.sendPacket(response);
+        throwDroppedItems();
         return PacketSignal.HANDLED;
+    }
+
+    private void throwFromHotbar(List<InventoryActionData> actions) {
+        InventoryActionData intoWorld = null;
+        InventoryActionData fromSlot = null;
+        for (InventoryActionData action : actions) {
+            InventorySource source = action.getSource();
+            if (source.getType() == InventorySource.Type.WORLD_INTERACTION && action.getSlot() == 0) {
+                intoWorld = action;
+            } else if (source.getType() == InventorySource.Type.CONTAINER && source.getContainerId() == 0) {
+                fromSlot = action;
+            }
+        }
+        if (actions.size() != 2 || intoWorld == null || fromSlot == null || fromSlot.getFromItem().isNull()) {
+            Logger.debug("Ignored an inventory transaction from " + username + " that isn't a throw: " + actions);
+            return;
+        }
+        player.getInventory().throwFromSlot(fromSlot.getSlot(),
+                fromSlot.getFromItem().getDefinition().getRuntimeId(), intoWorld.getToItem().getCount());
+        throwDroppedItems();
+    }
+
+    /** Puts whatever the player's inventory threw out into the world, flying the way they look. */
+    private void throwDroppedItems() {
+        for (ItemData item : player.getInventory().takeDropped()) {
+            itemEntities.throwFrom(player, item);
+        }
     }
 
     /**
@@ -613,6 +639,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
         if (packet.getId() == 0 && player.getInventory().returnScreenItems()) {
             sendInventory();
+            throwDroppedItems();
         }
         return PacketSignal.HANDLED;
     }

@@ -169,6 +169,13 @@ public class PlayerManager {
         broadcast(swinger, animate);
     }
 
+    /** Sends a packet to every player in the world. */
+    public void sendToAll(BedrockPacket packet) {
+        for (Player player : players.values()) {
+            player.getSession().sendPacket(packet);
+        }
+    }
+
     private void broadcast(Player except, BedrockPacket packet) {
         for (Player other : others(except)) {
             other.getSession().sendPacket(packet);

@@ -7,6 +7,7 @@ import org.cloudburstmc.protocol.bedrock.data.inventory.FullContainerName;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequest;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequestSlotData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.DropAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.ItemStackRequestAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.SwapAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.TransferItemStackRequestAction;
@@ -30,6 +31,9 @@ import java.util.Objects;
  * offhand - plus, while the inventory screen is open, the cursor (what the player is
  * moving around) and the 2x2 crafting grid. Items only sit in the crafting grid for now;
  * there are no recipes to craft with yet.
+ * <p>
+ * Items thrown out of the inventory are collected here, for the caller to take with
+ * {@link #takeDropped()} and put into the world.
  * <p>
  * The server's copy is the real one (StartGame makes inventories server-authoritative).
  * The client moves items on its side and asks the server to confirm with item stack
@@ -88,6 +92,7 @@ public class PlayerInventory {
 
     private int nextNetId = 1;
     private final Deque<Recent> recent = new ArrayDeque<>();
+    private final List<ItemData> dropped = new ArrayList<>();
 
     /** The item in a main inventory slot. */
     public synchronized ItemData get(int slot) {
@@ -103,6 +108,53 @@ public class PlayerInventory {
     public synchronized ItemData useOne(int slot) {
         main[slot] = removed(main[slot], 1);
         return main[slot];
+    }
+
+    /**
+     * Adds as much of the item as fits into the main inventory, as picking it up does:
+     * onto stacks of the same item first, then into empty slots, hotbar first. Returns how
+     * many didn't fit.
+     */
+    public synchronized int add(ItemData item) {
+        int left = item.getCount();
+        for (int i = 0; i < SIZE && left > 0; i++) {
+            if (!main[i].isNull() && sameItem(main[i], item) && main[i].getCount() < MAX_STACK) {
+                int moved = Math.min(left, MAX_STACK - main[i].getCount());
+                main[i] = main[i].toBuilder().count(main[i].getCount() + moved).build();
+                left -= moved;
+            }
+        }
+        for (int i = 0; i < SIZE && left > 0; i++) {
+            if (main[i].isNull()) {
+                int moved = Math.min(left, MAX_STACK);
+                main[i] = withCount(item, moved, nextNetId++);
+                left -= moved;
+            }
+        }
+        return left;
+    }
+
+    /**
+     * Throws some of a main inventory slot out, as pressing Q on the hotbar does - if the
+     * slot really holds at least that many of the item the client says it does.
+     */
+    public synchronized void throwFromSlot(int slot, int itemId, int count) {
+        if (slot < 0 || slot >= SIZE) {
+            return;
+        }
+        ItemData item = main[slot];
+        if (item.isNull() || item.getDefinition().getRuntimeId() != itemId || count < 1 || count > item.getCount()) {
+            return;
+        }
+        dropped.add(item.toBuilder().count(count).build());
+        main[slot] = removed(item, count);
+    }
+
+    /** The items thrown out of the inventory since the last call, for the world to take. */
+    public synchronized List<ItemData> takeDropped() {
+        List<ItemData> taken = List.copyOf(dropped);
+        dropped.clear();
+        return taken;
     }
 
     /**
@@ -134,26 +186,28 @@ public class PlayerInventory {
 
     /**
      * Puts what's on the cursor and in the crafting grid back into the main inventory, as
-     * closing the inventory screen does. Returns whether anything moved. Anything that
-     * doesn't fit stays where it was - vanilla throws it on the ground, but there are no
-     * dropped items yet.
+     * closing the inventory screen does; what doesn't fit is thrown out. Returns whether
+     * anything moved.
      */
     public synchronized boolean returnScreenItems() {
-        boolean moved = false;
-        if (!cursor.isNull()) {
-            int left = add(cursor);
-            moved |= left < cursor.getCount();
-            cursor = left == 0 ? ItemData.AIR : withCount(cursor, left, cursor.getNetId());
-        }
+        boolean moved = returnToMain(cursor);
+        cursor = ItemData.AIR;
         for (int i = 0; i < CRAFTING_SIZE; i++) {
-            ItemData item = crafting[i];
-            if (!item.isNull()) {
-                int left = add(item);
-                moved |= left < item.getCount();
-                crafting[i] = left == 0 ? ItemData.AIR : withCount(item, left, item.getNetId());
-            }
+            moved |= returnToMain(crafting[i]);
+            crafting[i] = ItemData.AIR;
         }
         return moved;
+    }
+
+    private boolean returnToMain(ItemData item) {
+        if (item.isNull()) {
+            return false;
+        }
+        int left = add(item);
+        if (left > 0) {
+            dropped.add(item.toBuilder().count(left).build());
+        }
+        return true;
     }
 
     /**
@@ -189,6 +243,16 @@ public class PlayerInventory {
             note(changes, to);
             touch(touched, swap.getSource());
             touch(touched, swap.getDestination());
+        } else if (action instanceof DropAction drop) {
+            Place from = checked(drop.getSource(), requestId, changes);
+            ItemData item = get(from);
+            if (item.isNull() || drop.getCount() < 1 || drop.getCount() > item.getCount()) {
+                throw new Refused("can't drop " + drop.getCount() + " from a stack of " + item.getCount());
+            }
+            dropped.add(item.toBuilder().count(drop.getCount()).build());
+            set(from, removed(item, drop.getCount()));
+            note(changes, from);
+            touch(touched, drop.getSource());
         } else {
             switch (action.getType()) {
                 // Informational only: what the client expects a craft to make, and a tool's
@@ -313,29 +377,6 @@ public class PlayerInventory {
             return 3;
         }
         return -1;
-    }
-
-    /**
-     * Adds as much of the item as fits into the main inventory: onto stacks of the same
-     * item first, then into empty slots, hotbar first. Returns how many didn't fit.
-     */
-    private int add(ItemData item) {
-        int left = item.getCount();
-        for (int i = 0; i < SIZE && left > 0; i++) {
-            if (!main[i].isNull() && sameItem(main[i], item) && main[i].getCount() < MAX_STACK) {
-                int moved = Math.min(left, MAX_STACK - main[i].getCount());
-                main[i] = main[i].toBuilder().count(main[i].getCount() + moved).build();
-                left -= moved;
-            }
-        }
-        for (int i = 0; i < SIZE && left > 0; i++) {
-            if (main[i].isNull()) {
-                int moved = Math.min(left, MAX_STACK);
-                main[i] = withCount(item, moved, nextNetId++);
-                left -= moved;
-            }
-        }
-        return left;
     }
 
     /** What the touched slots now hold, grouped by container as the client named them. */
@@ -469,8 +510,11 @@ public class PlayerInventory {
         private final ItemData[] crafting = PlayerInventory.this.crafting.clone();
         private final ItemData offhand = PlayerInventory.this.offhand;
         private final ItemData cursor = PlayerInventory.this.cursor;
+        private final int droppedCount = PlayerInventory.this.dropped.size();
 
         void restore() {
+            // Whatever the refused request would have thrown out stays in the inventory.
+            dropped.subList(droppedCount, dropped.size()).clear();
             PlayerInventory.this.main = main;
             PlayerInventory.this.armor = armor;
             PlayerInventory.this.crafting = crafting;

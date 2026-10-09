@@ -1,5 +1,6 @@
 package com.netherrack.server.network;
 
+import com.netherrack.server.block.Block;
 import com.netherrack.server.util.Logger;
 import org.cloudburstmc.nbt.NbtList;
 import org.cloudburstmc.nbt.NbtMap;
@@ -8,6 +9,7 @@ import org.cloudburstmc.nbt.NbtUtils;
 import org.cloudburstmc.protocol.bedrock.data.biome.BiomeDefinitionData;
 import org.cloudburstmc.protocol.bedrock.data.biome.BiomeDefinitions;
 import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
+import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
 import org.cloudburstmc.protocol.bedrock.data.definitions.SimpleItemDefinition;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ItemVersion;
 import org.cloudburstmc.protocol.common.DefinitionRegistry;
@@ -116,6 +118,15 @@ public final class VanillaData {
     /** Every vanilla item, in the form ItemComponentPacket sends them to the client. */
     public List<ItemDefinition> getItemDefinitions() {
         return itemDefinitions;
+    }
+
+    /** One or more of the item that places a block, e.g. for a broken block's drop. */
+    public ItemData blockItem(Block block, int count) {
+        return ItemData.builder()
+                .definition(itemRegistry.getDefinition(block.getIdentifier()))
+                .blockDefinition(HashedBlockDefinitions.of(block.getBlockStateHash()))
+                .count(count)
+                .build();
     }
 
     /** The same items as a lookup the codec uses to decode item stacks in client packets. */

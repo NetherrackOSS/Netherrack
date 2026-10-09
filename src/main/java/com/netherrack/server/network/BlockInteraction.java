@@ -2,6 +2,7 @@ package com.netherrack.server.network;
 
 import com.netherrack.server.block.Block;
 import com.netherrack.server.block.Blocks;
+import com.netherrack.server.entity.ItemEntities;
 import com.netherrack.server.player.Player;
 import com.netherrack.server.player.PlayerInventory;
 import com.netherrack.server.player.PlayerManager;
@@ -58,13 +59,15 @@ public class BlockInteraction {
 
     private final World world;
     private final PlayerManager players;
+    private final ItemEntities itemEntities;
 
     /** The block this player is cracking, or null if they aren't breaking anything. */
     private Vector3i breaking;
 
-    public BlockInteraction(World world, PlayerManager players) {
+    public BlockInteraction(World world, PlayerManager players, ItemEntities itemEntities) {
         this.world = world;
         this.players = players;
+        this.itemEntities = itemEntities;
     }
 
     /** The block actions from one PlayerAuthInput: starting, stopping and finishing breaks. */
@@ -178,6 +181,10 @@ public class BlockInteraction {
         players.broadcastBlock(position, Blocks.AIR);
         // The break particles and sound, telling the client which block it was.
         players.broadcastLevelEvent(LevelEvent.PARTICLE_DESTROY_BLOCK, center(position), block.getBlockStateHash());
+
+        // The block's own item pops out. Vanilla's rules differ for some blocks (grass drops
+        // dirt, stone-like blocks need a pickaxe), but Netherrack has neither dirt nor tools yet.
+        itemEntities.dropFromBlock(position, VanillaData.get().blockItem(block, 1));
     }
 
     private void sendSlot(Player player, int slot, ItemData item) {
