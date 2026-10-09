@@ -33,6 +33,26 @@ public class Block {
         return blockStateHash;
     }
 
+    /** Vanilla's hardness value, which sets how long the block takes to break. */
+    public float getHardness() {
+        return 0;
+    }
+
+    /** Whether breaking it by hand is the slow, no-drop kind (e.g. stone without a pickaxe). */
+    public boolean requiresTool() {
+        return false;
+    }
+
+    /**
+     * How many ticks breaking this by hand takes, by vanilla's formula: hardness times 1.5
+     * seconds, or times 5 when the block needs a tool. Only used to animate other
+     * players' view of the cracks - the breaking player's own client times the break.
+     */
+    public int getHandBreakTicks() {
+        float seconds = getHardness() * (requiresTool() ? 5f : 1.5f);
+        return Math.max(1, Math.round(seconds * 20));
+    }
+
     @Override
     public String toString() {
         return identifier;

@@ -2,7 +2,9 @@ package com.netherrack.server.network;
 
 import com.netherrack.server.Netherrack;
 import com.netherrack.server.block.Block;
+import com.netherrack.server.block.Blocks;
 import com.netherrack.server.player.Player;
+import com.netherrack.server.player.PlayerInventory;
 import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.player.SkinParser;
 import com.netherrack.server.util.Logger;
@@ -29,6 +31,12 @@ import org.cloudburstmc.protocol.bedrock.data.PlayerPermission;
 import org.cloudburstmc.protocol.bedrock.data.SpawnBiomeType;
 import org.cloudburstmc.protocol.bedrock.data.WorldType;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandPermission;
+import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerId;
+import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequest;
+import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.response.ItemStackResponse;
+import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.response.ItemStackResponseStatus;
+import org.cloudburstmc.protocol.bedrock.data.inventory.transaction.InventoryTransactionType;
 import org.cloudburstmc.protocol.bedrock.data.skin.SerializedSkin;
 import org.cloudburstmc.nbt.NbtMap;
 import org.cloudburstmc.nbt.NbtType;
@@ -41,7 +49,11 @@ import org.cloudburstmc.protocol.bedrock.packet.ClientToServerHandshakePacket;
 import org.cloudburstmc.protocol.bedrock.packet.CraftingDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.CreativeContentPacket;
 import org.cloudburstmc.protocol.bedrock.packet.DimensionDataPacket;
+import org.cloudburstmc.protocol.bedrock.packet.InventoryContentPacket;
+import org.cloudburstmc.protocol.bedrock.packet.InventoryTransactionPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ItemComponentPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ItemStackRequestPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ItemStackResponsePacket;
 import org.cloudburstmc.protocol.bedrock.packet.JigsawStructureDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LevelChunkPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LoginPacket;
@@ -107,6 +119,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
     private final BedrockServerSession session;
     private final World world;
     private final PlayerManager players;
+    private final BlockInteraction blockInteraction;
     private final Netherrack netherrack;
     private final VanillaData vanillaData = VanillaData.get();
     private final long runtimeEntityId = ENTITY_ID_COUNTER.getAndIncrement();
@@ -126,6 +139,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         this.session = session;
         this.world = world;
         this.players = players;
+        this.blockInteraction = new BlockInteraction(world, players);
         this.netherrack = netherrack;
     }
 
@@ -400,6 +414,31 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         abilities.setCommandPermission(CommandPermission.ANY);
         abilities.setAbilityLayers(List.of(base));
         session.sendPacket(abilities);
+
+        giveStarterItems();
+    }
+
+    /**
+     * Until there's a real inventory system, every player starts with a stack of each
+     * block Netherrack has, so there's something to build with.
+     */
+    private void giveStarterItems() {
+        PlayerInventory inventory = player.getInventory();
+        inventory.set(0, blockItem(Blocks.GRASS_BLOCK, 64));
+        inventory.set(1, blockItem(Blocks.COBBLESTONE, 64));
+
+        InventoryContentPacket contents = new InventoryContentPacket();
+        contents.setContainerId(ContainerId.INVENTORY);
+        contents.setContents(inventory.getContents());
+        session.sendPacket(contents);
+    }
+
+    private ItemData blockItem(Block block, int count) {
+        return ItemData.builder()
+                .definition(vanillaData.getItemRegistry().getDefinition(block.getIdentifier()))
+                .blockDefinition(HashedBlockDefinitions.of(block.getBlockStateHash()))
+                .count(count)
+                .build();
     }
 
     @Override
@@ -425,8 +464,11 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             return PacketSignal.HANDLED;
         }
 
-        // Checked before the "standing still" shortcut below, since players can start or
-        // stop sneaking without moving.
+        // Checked before the "standing still" shortcut below, since players can break
+        // blocks and start or stop sneaking without moving.
+        if (!packet.getPlayerActions().isEmpty()) {
+            blockInteraction.handleActions(player, packet.getPlayerActions());
+        }
         if (packet.getInputData().contains(PlayerAuthInputData.START_SNEAKING)) {
             player.setSneaking(true);
             players.broadcastEntityData(player);
@@ -492,9 +534,38 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         return PacketSignal.HANDLED;
     }
 
+    /**
+     * Using the held item. The only use handled so far is a right click on a block
+     * (action type 0), which places the held block against it.
+     */
+    @Override
+    public PacketSignal handle(InventoryTransactionPacket packet) {
+        if (player != null && packet.getTransactionType() == InventoryTransactionType.ITEM_USE
+                && packet.getActionType() == 0) {
+            blockInteraction.handleItemUse(player, packet);
+        }
+        return PacketSignal.HANDLED;
+    }
+
+    /**
+     * The client asking to move items around its inventory screen. There's no inventory
+     * system to carry these out yet, so every request is refused - the client then puts
+     * the items back where the server says they are, rather than drifting out of step.
+     */
+    @Override
+    public PacketSignal handle(ItemStackRequestPacket packet) {
+        ItemStackResponsePacket response = new ItemStackResponsePacket();
+        for (ItemStackRequest request : packet.getRequests()) {
+            response.getEntries().add(new ItemStackResponse(ItemStackResponseStatus.ERROR, request.getRequestId(), List.of()));
+        }
+        session.sendPacket(response);
+        return PacketSignal.HANDLED;
+    }
+
     /** Called once the connection has closed, for whatever reason. */
     public void onDisconnect() {
         if (player != null) {
+            blockInteraction.stopBreaking();
             players.leave(player);
         }
     }
@@ -534,6 +605,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         // Client packets that carry item stacks can only be decoded once the codec knows
         // the item ids, so this has to be in place before the client starts sending them.
         session.getPeer().getCodecHelper().setItemDefinitions(vanillaData.getItemRegistry());
+        session.getPeer().getCodecHelper().setBlockDefinitions(new HashedBlockDefinitions());
 
         StartGamePacket startGame = new StartGamePacket();
 

@@ -1,18 +1,26 @@
 package com.netherrack.server.player;
 
+import com.netherrack.server.block.Block;
+import com.netherrack.server.network.HashedBlockDefinitions;
 import org.cloudburstmc.math.vector.Vector3f;
+import org.cloudburstmc.math.vector.Vector3i;
 import org.cloudburstmc.protocol.bedrock.data.GameType;
+import org.cloudburstmc.protocol.bedrock.data.LevelEvent;
+import org.cloudburstmc.protocol.bedrock.data.SoundEvent;
 import org.cloudburstmc.protocol.bedrock.data.PlayerPermission;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandPermission;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
 import org.cloudburstmc.protocol.bedrock.packet.AddPlayerPacket;
 import org.cloudburstmc.protocol.bedrock.packet.AnimatePacket;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
+import org.cloudburstmc.protocol.bedrock.packet.LevelEventPacket;
+import org.cloudburstmc.protocol.bedrock.packet.LevelSoundEventPacket;
 import org.cloudburstmc.protocol.bedrock.packet.MovePlayerPacket;
 import org.cloudburstmc.protocol.bedrock.packet.PlayerListPacket;
 import org.cloudburstmc.protocol.bedrock.packet.RemoveEntityPacket;
 import org.cloudburstmc.protocol.bedrock.packet.SetEntityDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.TextPacket;
+import org.cloudburstmc.protocol.bedrock.packet.UpdateBlockPacket;
 
 import java.awt.Color;
 import java.util.ArrayList;
@@ -114,6 +122,44 @@ public class PlayerManager {
         }
     }
 
+    /** Shows every player, the one who made it included, that a block has changed. */
+    public void broadcastBlock(Vector3i position, Block block) {
+        UpdateBlockPacket update = blockUpdate(position, block);
+        for (Player player : players.values()) {
+            player.getSession().sendPacket(update);
+        }
+    }
+
+    /** A world effect, such as block cracks or break particles, for every player. */
+    public void broadcastLevelEvent(LevelEvent event, Vector3f position, int data) {
+        LevelEventPacket packet = levelEvent(event, position, data);
+        for (Player player : players.values()) {
+            player.getSession().sendPacket(packet);
+        }
+    }
+
+    /** The sound of a block being placed, for everyone but the player who placed it. */
+    public void broadcastPlaceSound(Player placer, Vector3f position, Block block) {
+        LevelSoundEventPacket sound = new LevelSoundEventPacket();
+        sound.setSound(SoundEvent.PLACE);
+        sound.setPosition(position);
+        sound.setExtraData(block.getBlockStateHash());
+        sound.setIdentifier("");
+        sound.setEntityUniqueId(-1);
+        broadcast(placer, sound);
+    }
+
+    /** Tells a client what block is at a position - used to correct a refused change it predicted. */
+    public static UpdateBlockPacket blockUpdate(Vector3i position, Block block) {
+        UpdateBlockPacket update = new UpdateBlockPacket();
+        update.setBlockPosition(position);
+        update.setDefinition(HashedBlockDefinitions.of(block.getBlockStateHash()));
+        update.setDataLayer(0);
+        update.getFlags().add(UpdateBlockPacket.Flag.NEIGHBORS);
+        update.getFlags().add(UpdateBlockPacket.Flag.NETWORK);
+        return update;
+    }
+
     /** Shows everyone else the player swinging their arm. */
     public void broadcastSwing(Player swinger, AnimatePacket.SwingSource source) {
         AnimatePacket animate = new AnimatePacket();
@@ -137,6 +183,14 @@ public class PlayerManager {
             }
         }
         return others;
+    }
+
+    private static LevelEventPacket levelEvent(LevelEvent event, Vector3f position, int data) {
+        LevelEventPacket packet = new LevelEventPacket();
+        packet.setType(event);
+        packet.setPosition(position);
+        packet.setData(data);
+        return packet;
     }
 
     private static PlayerListPacket playerList(PlayerListPacket.Action action, List<PlayerListPacket.Entry> entries) {

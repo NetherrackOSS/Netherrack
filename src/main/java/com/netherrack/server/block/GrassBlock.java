@@ -14,4 +14,9 @@ public class GrassBlock extends Block {
         // rather than a literal (3727763636 alone won't compile, it overflows int).
         super("minecraft:grass_block", (int) 3727763636L);
     }
+
+    @Override
+    public float getHardness() {
+        return 0.6f;
+    }
 }

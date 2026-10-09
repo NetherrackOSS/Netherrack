@@ -33,6 +33,7 @@ public class Player {
     private final SerializedSkin skin;
     private final String deviceId;
     private final BuildPlatform buildPlatform;
+    private final PlayerInventory inventory = new PlayerInventory();
 
     // Written by this player's own network thread, read by every other player's when
     // they're shown this player - hence volatile.
@@ -88,6 +89,10 @@ public class Player {
 
     public BuildPlatform getBuildPlatform() {
         return buildPlatform;
+    }
+
+    public PlayerInventory getInventory() {
+        return inventory;
     }
 
     public Vector3f getPosition() {
