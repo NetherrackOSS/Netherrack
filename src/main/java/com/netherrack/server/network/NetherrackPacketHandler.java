@@ -31,17 +31,16 @@ import org.cloudburstmc.protocol.bedrock.data.PlayerPermission;
 import org.cloudburstmc.protocol.bedrock.data.SpawnBiomeType;
 import org.cloudburstmc.protocol.bedrock.data.WorldType;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandPermission;
-import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerId;
+import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerType;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequest;
-import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.response.ItemStackResponse;
-import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.response.ItemStackResponseStatus;
 import org.cloudburstmc.protocol.bedrock.data.inventory.transaction.InventoryTransactionType;
 import org.cloudburstmc.protocol.bedrock.data.skin.SerializedSkin;
 import org.cloudburstmc.nbt.NbtMap;
 import org.cloudburstmc.nbt.NbtType;
 import org.cloudburstmc.protocol.bedrock.packet.AnimatePacket;
 import org.cloudburstmc.protocol.bedrock.packet.AvailableEntityIdentifiersPacket;
+import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacketHandler;
 import org.cloudburstmc.protocol.bedrock.packet.BiomeDefinitionListPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ChunkRadiusUpdatedPacket;
@@ -49,7 +48,9 @@ import org.cloudburstmc.protocol.bedrock.packet.ClientToServerHandshakePacket;
 import org.cloudburstmc.protocol.bedrock.packet.CraftingDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.CreativeContentPacket;
 import org.cloudburstmc.protocol.bedrock.packet.DimensionDataPacket;
-import org.cloudburstmc.protocol.bedrock.packet.InventoryContentPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ContainerClosePacket;
+import org.cloudburstmc.protocol.bedrock.packet.ContainerOpenPacket;
+import org.cloudburstmc.protocol.bedrock.packet.InteractPacket;
 import org.cloudburstmc.protocol.bedrock.packet.InventoryTransactionPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ItemComponentPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ItemStackRequestPacket;
@@ -134,6 +135,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
     private volatile String deviceId = "";
     private volatile BuildPlatform buildPlatform = BuildPlatform.UNKNOWN;
     private volatile Player player;
+    private volatile boolean inventoryOpen;
 
     public NetherrackPacketHandler(BedrockServerSession session, World world, PlayerManager players, Netherrack netherrack) {
         this.session = session;
@@ -426,11 +428,14 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         PlayerInventory inventory = player.getInventory();
         inventory.set(0, blockItem(Blocks.GRASS_BLOCK, 64));
         inventory.set(1, blockItem(Blocks.COBBLESTONE, 64));
+        sendInventory();
+    }
 
-        InventoryContentPacket contents = new InventoryContentPacket();
-        contents.setContainerId(ContainerId.INVENTORY);
-        contents.setContents(inventory.getContents());
-        session.sendPacket(contents);
+    /** Shows the client its whole inventory as the server has it. */
+    private void sendInventory() {
+        for (BedrockPacket packet : player.getInventory().contentPackets()) {
+            session.sendPacket(packet);
+        }
     }
 
     private ItemData blockItem(Block block, int count) {
@@ -537,28 +542,78 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
     /**
      * Using the held item. The only use handled so far is a right click on a block
      * (action type 0), which places the held block against it.
+     * <p>
+     * A "normal" transaction is the client throwing items out from the hotbar (pressing
+     * Q), which it has already done on its side. There are no dropped items in the world
+     * yet, so it's undone by showing the client its inventory as it really is.
      */
     @Override
     public PacketSignal handle(InventoryTransactionPacket packet) {
-        if (player != null && packet.getTransactionType() == InventoryTransactionType.ITEM_USE
-                && packet.getActionType() == 0) {
+        if (player == null) {
+            return PacketSignal.HANDLED;
+        }
+        if (packet.getTransactionType() == InventoryTransactionType.ITEM_USE && packet.getActionType() == 0) {
             blockInteraction.handleItemUse(player, packet);
+        } else if (packet.getTransactionType() == InventoryTransactionType.NORMAL) {
+            sendInventory();
         }
         return PacketSignal.HANDLED;
     }
 
-    /**
-     * The client asking to move items around its inventory screen. There's no inventory
-     * system to carry these out yet, so every request is refused - the client then puts
-     * the items back where the server says they are, rather than drifting out of step.
-     */
+    /** The client asking to move items around its inventory screen - see PlayerInventory. */
     @Override
     public PacketSignal handle(ItemStackRequestPacket packet) {
+        if (player == null) {
+            return PacketSignal.HANDLED;
+        }
         ItemStackResponsePacket response = new ItemStackResponsePacket();
         for (ItemStackRequest request : packet.getRequests()) {
-            response.getEntries().add(new ItemStackResponse(ItemStackResponseStatus.ERROR, request.getRequestId(), List.of()));
+            response.getEntries().add(player.getInventory().handle(request));
         }
         session.sendPacket(response);
+        return PacketSignal.HANDLED;
+    }
+
+    /**
+     * The client opening its own inventory screen. It shows the screen only once the
+     * server answers with ContainerOpen, which vanilla places at the player's feet.
+     */
+    @Override
+    public PacketSignal handle(InteractPacket packet) {
+        if (player == null || packet.getAction() != InteractPacket.Action.OPEN_INVENTORY || inventoryOpen) {
+            return PacketSignal.HANDLED;
+        }
+        inventoryOpen = true;
+
+        ContainerOpenPacket open = new ContainerOpenPacket();
+        open.setId((byte) 0);
+        open.setType(ContainerType.INVENTORY);
+        open.setBlockPosition(player.getFeetPosition().toInt());
+        open.setUniqueEntityId(-1);
+        session.sendPacket(open);
+        return PacketSignal.HANDLED;
+    }
+
+    /**
+     * The client closing a screen. The server confirms it, and for the inventory screen
+     * puts what was left on the cursor and in the crafting grid back into the inventory.
+     */
+    @Override
+    public PacketSignal handle(ContainerClosePacket packet) {
+        if (player == null) {
+            return PacketSignal.HANDLED;
+        }
+        inventoryOpen = false;
+
+        ContainerClosePacket close = new ContainerClosePacket();
+        close.setId(packet.getId());
+        close.setType(packet.getType());
+        close.setServerInitiated(false);
+        session.sendPacket(close);
+
+        if (packet.getId() == 0 && player.getInventory().returnScreenItems()) {
+            sendInventory();
+        }
         return PacketSignal.HANDLED;
     }
 
