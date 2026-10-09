@@ -27,11 +27,13 @@ import java.util.List;
  * everyone else - or, when it isn't allowed, tells the client what's really there so its
  * prediction is undone.
  * <p>
- * Breaking is in survival, timed by the client (StartGame turns on server-authoritative
+ * Breaking in survival is timed by the client (StartGame turns on server-authoritative
  * block breaking, so the client reports each stage in PlayerAuthInput). The cracks and
  * the break particles are the server's to show though - to everyone, the breaking player
  * included, whose client draws neither itself in this mode. Placing uses the block item
  * the player holds, one of which is used up.
+ * <p>
+ * In creative, the first hit breaks a block and nothing drops, and placing uses nothing up.
  * <p>
  * There's one of these per player, since it keeps track of the block they're breaking.
  */
@@ -86,6 +88,7 @@ public class BlockInteraction {
                 }
                 case ABORT_BREAK, STOP_BREAK -> stopBreaking();
                 case BLOCK_PREDICT_DESTROY -> breakBlock(player, position);
+                case DIMENSION_CHANGE_REQUEST_OR_CREATIVE_DESTROY_BLOCK -> creativeBreak(player, position);
                 default -> {
                     // Not a block action, or not one Netherrack handles yet.
                 }
@@ -113,11 +116,22 @@ public class BlockInteraction {
             return;
         }
 
-        Block block = Blocks.byIdentifier(player.getInventory().get(slot).getDefinition().getIdentifier());
+        // The block state the held item carries: e.g. which colour of wool, or a slab's half.
+        ItemData held = player.getInventory().get(slot);
+        Block block = Blocks.of(VanillaData.get().placedBlock(held), held.getBlockDefinition().getRuntimeId());
         world.setBlock(target.getX(), target.getY(), target.getZ(), block);
         players.broadcastBlock(target, block);
         players.broadcastPlaceSound(player, center(target), block);
-        sendSlot(player, slot, player.getInventory().useOne(slot));
+        if (!player.isCreative()) {
+            sendSlot(player, slot, player.getInventory().useOne(slot));
+        }
+    }
+
+    /** A creative player's instant break, which their client reports as its own action. */
+    public void creativeBreak(Player player, Vector3i position) {
+        if (player.isCreative()) {
+            breakBlock(player, position);
+        }
     }
 
     /** Why the placement can't happen, or null if it can. */
@@ -127,8 +141,8 @@ public class BlockInteraction {
                 || held.getDefinition().getRuntimeId() != packet.getItemInHand().getDefinition().getRuntimeId()) {
             return "the client holds something else";
         }
-        if (Blocks.byIdentifier(held.getDefinition().getIdentifier()) == null) {
-            return "the held item isn't a block Netherrack has";
+        if (VanillaData.get().placedBlock(held) == null || held.getBlockDefinition() == null) {
+            return "the held item doesn't place a block";
         }
         if (!inWorld(target) || !withinReach(player, target)) {
             return "out of reach";
@@ -182,9 +196,12 @@ public class BlockInteraction {
         // The break particles and sound, telling the client which block it was.
         players.broadcastLevelEvent(LevelEvent.PARTICLE_DESTROY_BLOCK, center(position), block.getBlockStateHash());
 
-        // The block's own item pops out. Vanilla's rules differ for some blocks (grass drops
-        // dirt, stone-like blocks need a pickaxe), but Netherrack has neither dirt nor tools yet.
-        itemEntities.dropFromBlock(position, VanillaData.get().blockItem(block, 1));
+        // Outside creative, the block's own item pops out. Vanilla's rules differ for some
+        // blocks (grass drops dirt, stone-like blocks need a pickaxe), but Netherrack doesn't
+        // have per-block drops or tools yet.
+        if (!player.isCreative()) {
+            itemEntities.dropFromBlock(position, VanillaData.get().blockItem(block, 1));
+        }
     }
 
     private void sendSlot(Player player, int slot, ItemData item) {

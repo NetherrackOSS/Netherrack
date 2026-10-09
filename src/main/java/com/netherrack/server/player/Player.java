@@ -2,12 +2,22 @@ package com.netherrack.server.player;
 
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.protocol.bedrock.BedrockServerSession;
+import org.cloudburstmc.protocol.bedrock.data.Ability;
+import org.cloudburstmc.protocol.bedrock.data.AbilityLayer;
 import org.cloudburstmc.protocol.bedrock.data.BuildPlatform;
+import org.cloudburstmc.protocol.bedrock.data.GameType;
+import org.cloudburstmc.protocol.bedrock.data.PlayerPermission;
+import org.cloudburstmc.protocol.bedrock.data.command.CommandPermission;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataMap;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataTypes;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityFlag;
 import org.cloudburstmc.protocol.bedrock.data.skin.SerializedSkin;
+import org.cloudburstmc.protocol.bedrock.packet.SetPlayerGameTypePacket;
+import org.cloudburstmc.protocol.bedrock.packet.UpdateAbilitiesPacket;
 
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -25,6 +35,12 @@ public class Player {
     /** A full air supply, in ticks (15 seconds), as vanilla players start with. */
     private static final short MAX_AIR_SUPPLY = 300;
 
+    /** What a survival player may do; creative adds flying, instant building and invulnerability. */
+    private static final Set<Ability> SURVIVAL_ABILITIES = EnumSet.of(Ability.BUILD, Ability.MINE,
+            Ability.DOORS_AND_SWITCHES, Ability.OPEN_CONTAINERS, Ability.ATTACK_PLAYERS, Ability.ATTACK_MOBS);
+    private static final Set<Ability> CREATIVE_EXTRA_ABILITIES = EnumSet.of(Ability.MAY_FLY, Ability.INSTABUILD,
+            Ability.INVULNERABLE);
+
     private final BedrockServerSession session;
     private final String username;
     private final UUID uuid;
@@ -40,9 +56,12 @@ public class Player {
     private volatile Vector3f position;
     private volatile Vector3f rotation = Vector3f.ZERO;
     private volatile boolean sneaking;
+    private volatile GameType gameMode;
 
     public Player(BedrockServerSession session, String username, UUID uuid, String xuid, long entityId,
-                  SerializedSkin skin, String deviceId, BuildPlatform buildPlatform, Vector3f position) {
+                  SerializedSkin skin, String deviceId, BuildPlatform buildPlatform, Vector3f position,
+                  GameType gameMode) {
+        this.gameMode = gameMode;
         this.session = session;
         this.username = username;
         this.uuid = uuid;
@@ -132,6 +151,53 @@ public class Player {
         metadata.put(EntityDataTypes.WIDTH, 0.6f);
         metadata.put(EntityDataTypes.HEIGHT, 1.8f);
         return metadata;
+    }
+
+    public GameType getGameMode() {
+        return gameMode;
+    }
+
+    public boolean isCreative() {
+        return gameMode == GameType.CREATIVE;
+    }
+
+    /** Switches the player's game mode and tells their client, which changes what they can do. */
+    public void setGameMode(GameType gameMode) {
+        this.gameMode = gameMode;
+        SetPlayerGameTypePacket packet = new SetPlayerGameTypePacket();
+        packet.setGamemode(gameMode.ordinal());
+        session.sendPacket(packet);
+        session.sendPacket(createAbilities());
+    }
+
+    /**
+     * What the player's client lets them do: build, mine, attack and so on, plus flying
+     * and instant building in creative, and nothing at all in adventure but use things.
+     */
+    public UpdateAbilitiesPacket createAbilities() {
+        // One base layer that defines every ability, with the game mode's set enabled.
+        AbilityLayer base = new AbilityLayer();
+        base.setLayerType(AbilityLayer.Type.BASE);
+        base.getAbilitiesSet().addAll(EnumSet.allOf(Ability.class));
+        switch (gameMode) {
+            case CREATIVE -> {
+                base.getAbilityValues().addAll(SURVIVAL_ABILITIES);
+                base.getAbilityValues().addAll(CREATIVE_EXTRA_ABILITIES);
+            }
+            case ADVENTURE -> base.getAbilityValues().addAll(EnumSet.of(Ability.DOORS_AND_SWITCHES,
+                    Ability.OPEN_CONTAINERS, Ability.ATTACK_PLAYERS, Ability.ATTACK_MOBS));
+            default -> base.getAbilityValues().addAll(SURVIVAL_ABILITIES);
+        }
+        base.setWalkSpeed(0.1f);
+        base.setFlySpeed(0.05f);
+        base.setVerticalFlySpeed(1f);
+
+        UpdateAbilitiesPacket abilities = new UpdateAbilitiesPacket();
+        abilities.setUniqueEntityId(entityId);
+        abilities.setPlayerPermission(PlayerPermission.MEMBER);
+        abilities.setCommandPermission(CommandPermission.ANY);
+        abilities.setAbilityLayers(List.of(base));
+        return abilities;
     }
 
     public boolean isSneaking() {

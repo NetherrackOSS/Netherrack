@@ -48,6 +48,16 @@ public class PlayerManager {
         return Collections.unmodifiableCollection(players.values());
     }
 
+    /** The player in the world with this name, ignoring case, or null if there's none. */
+    public Player getPlayer(String username) {
+        for (Player player : players.values()) {
+            if (player.getUsername().equalsIgnoreCase(username)) {
+                return player;
+            }
+        }
+        return null;
+    }
+
     /**
      * Adds a player who has just finished loading into the world: they're sent everyone
      * already here (themselves included in the player list, as vanilla does), and

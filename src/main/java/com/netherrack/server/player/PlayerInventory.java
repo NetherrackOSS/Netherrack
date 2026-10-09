@@ -1,5 +1,6 @@
 package com.netherrack.server.player;
 
+import com.netherrack.server.network.VanillaData;
 import com.netherrack.server.util.Logger;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerId;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerSlotType;
@@ -7,6 +8,8 @@ import org.cloudburstmc.protocol.bedrock.data.inventory.FullContainerName;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequest;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequestSlotData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.CraftCreativeAction;
+import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.DestroyAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.DropAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.ItemStackRequestAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.SwapAction;
@@ -35,6 +38,10 @@ import java.util.Objects;
  * Items thrown out of the inventory are collected here, for the caller to take with
  * {@link #takeDropped()} and put into the world.
  * <p>
+ * Creative players can also take items from the creative inventory - each one appears in
+ * a "created output" slot for the rest of that request, to be moved somewhere real - and
+ * destroy items in the creative inventory's bin.
+ * <p>
  * The server's copy is the real one (StartGame makes inventories server-authoritative).
  * The client moves items on its side and asks the server to confirm with item stack
  * requests. Each request is applied whole or not at all, and the response either tells
@@ -55,16 +62,10 @@ public class PlayerInventory {
     /** The inventory screen's crafting grid is UI slots 28 to 31 (a crafting table's 3x3 grid starts at 32). */
     private static final int CRAFTING_FIRST_SLOT = 28;
 
-    /**
-     * The most of one item a stack holds. Vanilla has smaller limits for some items (16 for
-     * eggs, 1 for tools...) but Netherrack has no per-item data for that yet.
-     */
-    private static final int MAX_STACK = 64;
-
     /** How many requests' changes are remembered for later requests to refer back to. */
     private static final int RECENT_REQUESTS = 64;
 
-    private enum Kind { MAIN, ARMOR, OFFHAND, CURSOR, CRAFTING }
+    private enum Kind { MAIN, ARMOR, OFFHAND, CURSOR, CRAFTING, CREATED }
 
     /** A slot somewhere in the inventory. */
     private record Place(Kind kind, int index) {
@@ -89,6 +90,8 @@ public class PlayerInventory {
     private ItemData[] crafting = emptySlots(CRAFTING_SIZE);
     private ItemData offhand = ItemData.AIR;
     private ItemData cursor = ItemData.AIR;
+    /** What a creative player took from the creative inventory, for the rest of one request. */
+    private ItemData created = ItemData.AIR;
 
     private int nextNetId = 1;
     private final Deque<Recent> recent = new ArrayDeque<>();
@@ -116,17 +119,18 @@ public class PlayerInventory {
      * many didn't fit.
      */
     public synchronized int add(ItemData item) {
+        int max = maxStack(item);
         int left = item.getCount();
         for (int i = 0; i < SIZE && left > 0; i++) {
-            if (!main[i].isNull() && sameItem(main[i], item) && main[i].getCount() < MAX_STACK) {
-                int moved = Math.min(left, MAX_STACK - main[i].getCount());
+            if (!main[i].isNull() && sameItem(main[i], item) && main[i].getCount() < max) {
+                int moved = Math.min(left, max - main[i].getCount());
                 main[i] = main[i].toBuilder().count(main[i].getCount() + moved).build();
                 left -= moved;
             }
         }
         for (int i = 0; i < SIZE && left > 0; i++) {
             if (main[i].isNull()) {
-                int moved = Math.min(left, MAX_STACK);
+                int moved = Math.min(left, max);
                 main[i] = withCount(item, moved, nextNetId++);
                 left -= moved;
             }
@@ -160,23 +164,27 @@ public class PlayerInventory {
     /**
      * Applies an item stack request if it's valid, and returns the response to send: what
      * the touched slots now hold, or an error that makes the client undo the request.
+     * {@code creative} allows taking items from the creative inventory and destroying them.
      */
-    public synchronized ItemStackResponse handle(ItemStackRequest request) {
+    public synchronized ItemStackResponse handle(ItemStackRequest request, boolean creative) {
         int requestId = request.getRequestId();
         Snapshot before = new Snapshot();
         List<Change> changes = new ArrayList<>();
         List<ItemStackRequestSlotData> touched = new ArrayList<>();
         try {
             for (ItemStackRequestAction action : request.getActions()) {
-                apply(action, requestId, changes, touched);
+                apply(action, requestId, creative, changes, touched);
             }
             checkArmor();
         } catch (Refused refused) {
             before.restore();
+            created = ItemData.AIR;
             Logger.debug("Refused item stack request " + requestId + ": " + refused.getMessage());
             return new ItemStackResponse(ItemStackResponseStatus.ERROR, requestId, List.of());
         }
 
+        // Whatever's left of a creative item that wasn't put anywhere is gone once the request ends.
+        created = ItemData.AIR;
         recent.addLast(new Recent(requestId, changes));
         if (recent.size() > RECENT_REQUESTS) {
             recent.removeFirst();
@@ -226,7 +234,7 @@ public class PlayerInventory {
         return packets;
     }
 
-    private void apply(ItemStackRequestAction action, int requestId, List<Change> changes,
+    private void apply(ItemStackRequestAction action, int requestId, boolean creative, List<Change> changes,
                        List<ItemStackRequestSlotData> touched) throws Refused {
         if (action instanceof TransferItemStackRequestAction transfer) {
             // Take and Place: moving some or all of a stack, onto nothing or onto the same item.
@@ -236,6 +244,9 @@ public class PlayerInventory {
         } else if (action instanceof SwapAction swap) {
             Place from = checked(swap.getSource(), requestId, changes);
             Place to = checked(swap.getDestination(), requestId, changes);
+            if (from.kind() == Kind.CREATED || to.kind() == Kind.CREATED) {
+                throw new Refused("swapping with the created output");
+            }
             ItemData moving = get(from);
             set(from, get(to));
             set(to, moving);
@@ -243,6 +254,28 @@ public class PlayerInventory {
             note(changes, to);
             touch(touched, swap.getSource());
             touch(touched, swap.getDestination());
+        } else if (action instanceof CraftCreativeAction craft) {
+            if (!creative) {
+                throw new Refused("only creative players can take from the creative inventory");
+            }
+            ItemData item = VanillaData.get().creativeItem(craft.getCreativeItemNetworkId());
+            if (item == null) {
+                throw new Refused("no creative item " + craft.getCreativeItemNetworkId());
+            }
+            // Until it lands in a real slot, the client names this stack by the request's id.
+            created = withCount(item, item.getCount(), requestId);
+        } else if (action instanceof DestroyAction destroy) {
+            if (!creative) {
+                throw new Refused("only creative players can destroy items");
+            }
+            Place from = checked(destroy.getSource(), requestId, changes);
+            ItemData item = get(from);
+            if (item.isNull() || destroy.getCount() < 1 || destroy.getCount() > item.getCount()) {
+                throw new Refused("can't destroy " + destroy.getCount() + " from a stack of " + item.getCount());
+            }
+            set(from, removed(item, destroy.getCount()));
+            note(changes, from);
+            touch(touched, destroy.getSource());
         } else if (action instanceof DropAction drop) {
             Place from = checked(drop.getSource(), requestId, changes);
             ItemData item = get(from);
@@ -271,26 +304,32 @@ public class PlayerInventory {
         if (from.equals(to)) {
             throw new Refused("moving a stack onto itself");
         }
+        if (to.kind() == Kind.CREATED) {
+            throw new Refused("placing into the created output");
+        }
         ItemData moving = get(from);
         if (moving.isNull() || count < 1 || count > moving.getCount()) {
             throw new Refused("can't move " + count + " from a stack of " + moving.getCount());
         }
 
         ItemData there = get(to);
+        int max = maxStack(moving);
         ItemData arriving;
         if (there.isNull()) {
-            if (count > MAX_STACK) {
+            if (count > max) {
                 throw new Refused("a stack of " + count + " is too big");
             }
-            // A whole stack keeps its id; the part that splits off is a new stack.
-            int netId = count == moving.getCount() ? moving.getNetId() : nextNetId++;
+            // A whole stack keeps its id; the part that splits off, or a fresh creative
+            // item, is a new stack.
+            boolean whole = count == moving.getCount() && moving.getNetId() > 0;
+            int netId = whole ? moving.getNetId() : nextNetId++;
             arriving = withCount(moving, count, netId);
         } else {
             if (!sameItem(there, moving)) {
                 throw new Refused("the items don't stack");
             }
             int total = there.getCount() + count;
-            if (total > MAX_STACK) {
+            if (total > max) {
                 throw new Refused("a stack of " + total + " is too big");
             }
             arriving = there.toBuilder().count(total).build();
@@ -315,6 +354,8 @@ public class PlayerInventory {
         Integer expected;
         if (claimed >= 0) {
             expected = claimed;
+        } else if (claimed == actual) {
+            expected = claimed; // a fresh creative item, which carries the request's id itself
         } else if (claimed == requestId) {
             expected = lastChange(changes, place);
         } else {
@@ -341,6 +382,7 @@ public class PlayerInventory {
             // The offhand is slot 1 on the wire; 0 is accepted too.
             case OFFHAND -> index <= 1 ? new Place(Kind.OFFHAND, 0) : null;
             case CURSOR -> index == 0 ? new Place(Kind.CURSOR, 0) : null;
+            case CREATED_OUTPUT -> new Place(Kind.CREATED, 0);
             case CRAFTING_INPUT -> index >= CRAFTING_FIRST_SLOT && index < CRAFTING_FIRST_SLOT + CRAFTING_SIZE
                     ? new Place(Kind.CRAFTING, index - CRAFTING_FIRST_SLOT) : null;
             default -> null;
@@ -409,6 +451,9 @@ public class PlayerInventory {
     }
 
     private static void touch(List<ItemStackRequestSlotData> touched, ItemStackRequestSlotData slot) {
+        if (slot.getContainer() == ContainerSlotType.CREATED_OUTPUT) {
+            return; // not a real slot, so there's nothing to tell the client about it
+        }
         for (ItemStackRequestSlotData existing : touched) {
             if (existing.getSlot() == slot.getSlot() && containerName(existing).equals(containerName(slot))) {
                 return;
@@ -422,6 +467,9 @@ public class PlayerInventory {
     }
 
     private void note(List<Change> changes, Place place) {
+        if (place.kind() == Kind.CREATED) {
+            return;
+        }
         changes.add(new Change(place, netId(get(place))));
     }
 
@@ -442,6 +490,7 @@ public class PlayerInventory {
             case OFFHAND -> offhand;
             case CURSOR -> cursor;
             case CRAFTING -> crafting[place.index()];
+            case CREATED -> created;
         };
     }
 
@@ -452,6 +501,7 @@ public class PlayerInventory {
             case OFFHAND -> offhand = item;
             case CURSOR -> cursor = item;
             case CRAFTING -> crafting[place.index()] = item;
+            case CREATED -> created = item;
         }
     }
 
@@ -461,6 +511,10 @@ public class PlayerInventory {
                 && a.getDamage() == b.getDamage()
                 && Objects.equals(a.getTag(), b.getTag())
                 && blockId(a) == blockId(b);
+    }
+
+    private static int maxStack(ItemData item) {
+        return VanillaData.get().maxStackSize(item);
     }
 
     private static int blockId(ItemData item) {

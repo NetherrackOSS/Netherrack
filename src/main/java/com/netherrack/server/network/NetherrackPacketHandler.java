@@ -5,6 +5,7 @@ import com.netherrack.server.block.Block;
 import com.netherrack.server.block.Blocks;
 import com.netherrack.server.entity.EntityIds;
 import com.netherrack.server.entity.ItemEntities;
+import com.netherrack.server.player.GameModes;
 import com.netherrack.server.player.Player;
 import com.netherrack.server.player.PlayerInventory;
 import com.netherrack.server.player.PlayerManager;
@@ -21,18 +22,16 @@ import org.cloudburstmc.protocol.bedrock.data.AuthoritativeMovementMode;
 import org.cloudburstmc.protocol.bedrock.data.ChatRestrictionLevel;
 import org.cloudburstmc.protocol.bedrock.data.EduSharedUriResource;
 import org.cloudburstmc.protocol.bedrock.data.GamePublishSetting;
-import org.cloudburstmc.protocol.bedrock.data.Ability;
-import org.cloudburstmc.protocol.bedrock.data.AbilityLayer;
 import org.cloudburstmc.protocol.bedrock.data.AttributeData;
 import org.cloudburstmc.protocol.bedrock.data.BuildPlatform;
 import org.cloudburstmc.protocol.bedrock.data.GameType;
 import org.cloudburstmc.protocol.bedrock.data.NetworkPermissions;
 import org.cloudburstmc.protocol.bedrock.data.PacketCompressionAlgorithm;
+import org.cloudburstmc.protocol.bedrock.data.PlayerActionType;
 import org.cloudburstmc.protocol.bedrock.data.PlayerAuthInputData;
 import org.cloudburstmc.protocol.bedrock.data.PlayerPermission;
 import org.cloudburstmc.protocol.bedrock.data.SpawnBiomeType;
 import org.cloudburstmc.protocol.bedrock.data.WorldType;
-import org.cloudburstmc.protocol.bedrock.data.command.CommandPermission;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerType;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequest;
@@ -64,6 +63,7 @@ import org.cloudburstmc.protocol.bedrock.packet.LevelChunkPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LoginPacket;
 import org.cloudburstmc.protocol.bedrock.packet.NetworkChunkPublisherUpdatePacket;
 import org.cloudburstmc.protocol.bedrock.packet.NetworkSettingsPacket;
+import org.cloudburstmc.protocol.bedrock.packet.PlayerActionPacket;
 import org.cloudburstmc.protocol.bedrock.packet.PlayerAuthInputPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ServerToClientHandshakePacket;
 import org.cloudburstmc.protocol.bedrock.packet.PlayStatusPacket;
@@ -77,7 +77,6 @@ import org.cloudburstmc.protocol.bedrock.packet.SetLocalPlayerAsInitializedPacke
 import org.cloudburstmc.protocol.bedrock.packet.StartGamePacket;
 import org.cloudburstmc.protocol.bedrock.packet.TextPacket;
 import org.cloudburstmc.protocol.bedrock.packet.TrimDataPacket;
-import org.cloudburstmc.protocol.bedrock.packet.UpdateAbilitiesPacket;
 import org.cloudburstmc.protocol.bedrock.packet.UpdateAttributesPacket;
 import org.cloudburstmc.protocol.bedrock.packet.VoxelShapesPacket;
 import org.cloudburstmc.protocol.bedrock.util.ChainValidationResult;
@@ -90,7 +89,6 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -308,7 +306,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
                 + spawnX + " " + spawnY + ".0 " + spawnZ + " / " + world.getName());
 
         player = new Player(session, username, UUID.fromString(uuid), xuid, runtimeEntityId,
-                skin, deviceId, buildPlatform, spawnPosition);
+                skin, deviceId, buildPlatform, spawnPosition, defaultGameMode());
 
         PlayStatusPacket loginSuccess = new PlayStatusPacket();
         loginSuccess.setStatus(PlayStatusPacket.Status.LOGIN_SUCCESS);
@@ -403,22 +401,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
                 new AttributeData("minecraft:player.experience", 0, 1, 0, 0)));
         session.sendPacket(attributes);
 
-        // One base layer that defines every ability, with a survival member's set enabled.
-        AbilityLayer base = new AbilityLayer();
-        base.setLayerType(AbilityLayer.Type.BASE);
-        base.getAbilitiesSet().addAll(EnumSet.allOf(Ability.class));
-        base.getAbilityValues().addAll(EnumSet.of(Ability.BUILD, Ability.MINE, Ability.DOORS_AND_SWITCHES,
-                Ability.OPEN_CONTAINERS, Ability.ATTACK_PLAYERS, Ability.ATTACK_MOBS));
-        base.setWalkSpeed(0.1f);
-        base.setFlySpeed(0.05f);
-        base.setVerticalFlySpeed(1f);
-
-        UpdateAbilitiesPacket abilities = new UpdateAbilitiesPacket();
-        abilities.setUniqueEntityId(runtimeEntityId);
-        abilities.setPlayerPermission(PlayerPermission.MEMBER);
-        abilities.setCommandPermission(CommandPermission.ANY);
-        abilities.setAbilityLayers(List.of(base));
-        session.sendPacket(abilities);
+        session.sendPacket(player.createAbilities());
 
         giveStarterItems();
     }
@@ -566,7 +549,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         }
         ItemStackResponsePacket response = new ItemStackResponsePacket();
         for (ItemStackRequest request : packet.getRequests()) {
-            response.getEntries().add(player.getInventory().handle(request));
+            response.getEntries().add(player.getInventory().handle(request, player.isCreative()));
         }
         session.sendPacket(response);
         throwDroppedItems();
@@ -644,6 +627,26 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         return PacketSignal.HANDLED;
     }
 
+    /** Some player actions arrive on their own: a creative player's instant block break is one. */
+    @Override
+    public PacketSignal handle(PlayerActionPacket packet) {
+        if (player != null && packet.getAction() == PlayerActionType.DIMENSION_CHANGE_REQUEST_OR_CREATIVE_DESTROY_BLOCK) {
+            blockInteraction.creativeBreak(player, packet.getBlockPosition());
+        }
+        return PacketSignal.HANDLED;
+    }
+
+    /** The game mode players join in, from "gamemode" in server.properties. */
+    private GameType defaultGameMode() {
+        String configured = netherrack.getConfig().get("gamemode", "survival");
+        GameType gameMode = GameModes.parse(configured);
+        if (gameMode == null) {
+            Logger.warn("Unknown gamemode \"" + configured + "\" in server.properties, using survival.");
+            return GameType.SURVIVAL;
+        }
+        return gameMode;
+    }
+
     /** Called once the connection has closed, for whatever reason. */
     public void onDisconnect() {
         if (player != null) {
@@ -693,7 +696,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
         startGame.setUniqueEntityId(runtimeEntityId);
         startGame.setRuntimeEntityId(runtimeEntityId);
-        startGame.setPlayerGameType(GameType.SURVIVAL);
+        startGame.setPlayerGameType(player.getGameMode());
         startGame.setPlayerPosition(spawnPosition);
         startGame.setRotation(Vector2f.from(0, 0));
 
@@ -702,7 +705,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         startGame.setCustomBiomeName("");
         startGame.setDimensionId(0); // overworld
         startGame.setGeneratorId(2); // flat
-        startGame.setLevelGameType(GameType.SURVIVAL);
+        startGame.setLevelGameType(defaultGameMode());
         startGame.setDifficulty(1);
         startGame.setDefaultSpawn(Vector3i.from(spawnPosition.getFloorX(), spawnPosition.getFloorY(), spawnPosition.getFloorZ()));
         startGame.setAchievementsDisabled(true);
@@ -755,6 +758,10 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         startGame.setCurrentTick(0);
         startGame.setEnchantmentSeed(0);
         startGame.setBlockPalette(vanillaData.getBlockPalette());
+        // The vanilla blocks defined in the vanilla behavior pack rather than built into the
+        // client - see VanillaData. Without these the client has no such blocks, and warns
+        // about every texture its resource pack has for them.
+        startGame.getBlockProperties().addAll(vanillaData.getDataDrivenBlocks());
         startGame.setMultiplayerCorrelationId(UUID.randomUUID().toString());
         startGame.setInventoriesServerAuthoritative(true);
         startGame.setServerEngine("Netherrack");
@@ -802,14 +809,18 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
         // The rest of these are part of the standard join sequence real clients expect to
         // see regardless of whether a server actually has anything custom to put in them -
-        // all empty/default here since Netherrack doesn't have a creative inventory,
-        // crafting recipes or armor trims yet.
+        // empty/default here since Netherrack doesn't have crafting recipes or armor trims yet.
         //
         // SyncEntityProperty is deliberately not sent: vanilla sends one per entity type
         // that has properties ({type, properties...}), and an empty one makes the client
         // reject the join with a generic "Block" error. It belongs here again once there are
         // entities with real property data to send.
-        session.sendPacket(new CreativeContentPacket());
+        // Sent to everyone whatever their game mode, as vanilla does: it's only usable in
+        // creative, but switching modes doesn't send it again.
+        CreativeContentPacket creative = new CreativeContentPacket();
+        creative.getGroups().addAll(vanillaData.getCreativeGroups());
+        creative.getContents().addAll(vanillaData.getCreativeItems());
+        session.sendPacket(creative);
 
         // cleanRecipes left false (the default) deliberately - true would clear the
         // client's own built-in vanilla recipes, and we have nothing to replace them with

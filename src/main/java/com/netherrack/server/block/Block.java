@@ -33,9 +33,12 @@ public class Block {
         return blockStateHash;
     }
 
-    /** Vanilla's hardness value, which sets how long the block takes to break. */
+    /**
+     * Vanilla's hardness value, which sets how long the block takes to break. Blocks
+     * without their own class don't know theirs yet, so they use a typical block's.
+     */
     public float getHardness() {
-        return 0;
+        return 1;
     }
 
     /** Whether breaking it by hand is the slow, no-drop kind (e.g. stone without a pickaxe). */

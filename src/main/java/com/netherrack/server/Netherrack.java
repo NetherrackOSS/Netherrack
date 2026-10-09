@@ -1,6 +1,7 @@
 package com.netherrack.server;
 
 import com.netherrack.server.command.CommandManager;
+import com.netherrack.server.command.GamemodeCommand;
 import com.netherrack.server.command.HelpCommand;
 import com.netherrack.server.command.StopCommand;
 import com.netherrack.server.command.VersionCommand;
@@ -49,6 +50,15 @@ public class Netherrack {
         commandManager.register(new StopCommand());
         commandManager.register(new VersionCommand());
         commandManager.register(new HelpCommand());
+        commandManager.register(new GamemodeCommand());
+    }
+
+    public ServerConfig getConfig() {
+        return config;
+    }
+
+    public PlayerManager getPlayerManager() {
+        return playerManager;
     }
 
     public ItemEntities getItemEntities() {
