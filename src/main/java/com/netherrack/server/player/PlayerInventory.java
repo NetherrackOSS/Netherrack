@@ -102,11 +102,6 @@ public class PlayerInventory {
         return main[slot];
     }
 
-    /** Puts an item in a main inventory slot as a new stack, replacing what was there. */
-    public synchronized void set(int slot, ItemData item) {
-        main[slot] = item.isNull() ? ItemData.AIR : withCount(item, item.getCount(), nextNetId++);
-    }
-
     /** Uses up one item from a main inventory slot (e.g. a block that was just placed) and returns what's left. */
     public synchronized ItemData useOne(int slot) {
         main[slot] = removed(main[slot], 1);
@@ -185,11 +180,65 @@ public class PlayerInventory {
 
         // Whatever's left of a creative item that wasn't put anywhere is gone once the request ends.
         created = ItemData.AIR;
+        remember(requestId, changes);
+        return new ItemStackResponse(ItemStackResponseStatus.OK, requestId, describe(touched));
+    }
+
+    /**
+     * Puts on the armor held in a hotbar slot, as using it does, swapping it with whatever
+     * was worn there - if the slot holds the item the client says it does, and it's worn.
+     * Returns whether it was put on.
+     */
+    public synchronized boolean equipHeld(int slot, int itemId) {
+        if (slot < 0 || slot >= HOTBAR_SIZE) {
+            return false;
+        }
+        ItemData held = main[slot];
+        if (held.isNull() || held.getDefinition().getRuntimeId() != itemId) {
+            return false;
+        }
+        int armorSlot = armorSlot(held.getDefinition().getIdentifier());
+        if (armorSlot < 0) {
+            return false;
+        }
+        main[slot] = armor[armorSlot];
+        armor[armorSlot] = held;
+        return true;
+    }
+
+    /**
+     * The answer to an inventory transaction's legacy request. With one, the client has
+     * already changed the listed slots on its own (e.g. putting armor on by using it), and
+     * goes on naming them by the request's id until it hears what they hold - so they're
+     * described as if an accepted request changed them, and the stack ids they now hold
+     * are remembered under its id. Without this, armor put on that way can't be taken off.
+     */
+    public synchronized ItemStackResponse legacyResponse(int requestId, List<ItemStackRequestSlotData> slots) {
+        List<Change> changes = new ArrayList<>();
+        List<ItemStackRequestSlotData> touched = new ArrayList<>();
+        for (ItemStackRequestSlotData slot : slots) {
+            try {
+                Place place = resolve(slot);
+                changes.add(new Change(place, netId(get(place))));
+                touch(touched, slot);
+            } catch (Refused refused) {
+                // A slot Netherrack doesn't have: nothing to tell the client about it.
+            }
+        }
+        remember(requestId, changes);
+        return new ItemStackResponse(ItemStackResponseStatus.OK, requestId, describe(touched));
+    }
+
+    /** What the player wears - helmet, chestplate, leggings, boots - for other players to see. */
+    public synchronized List<ItemData> getArmor() {
+        return List.of(armor);
+    }
+
+    private void remember(int requestId, List<Change> changes) {
         recent.addLast(new Recent(requestId, changes));
         if (recent.size() > RECENT_REQUESTS) {
             recent.removeFirst();
         }
-        return new ItemStackResponse(ItemStackResponseStatus.OK, requestId, describe(touched));
     }
 
     /**

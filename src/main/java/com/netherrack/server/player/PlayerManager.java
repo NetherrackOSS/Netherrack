@@ -15,6 +15,7 @@ import org.cloudburstmc.protocol.bedrock.packet.AnimatePacket;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LevelEventPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LevelSoundEventPacket;
+import org.cloudburstmc.protocol.bedrock.packet.MobArmorEquipmentPacket;
 import org.cloudburstmc.protocol.bedrock.packet.MovePlayerPacket;
 import org.cloudburstmc.protocol.bedrock.packet.PlayerListPacket;
 import org.cloudburstmc.protocol.bedrock.packet.RemoveEntityPacket;
@@ -74,10 +75,13 @@ public class PlayerManager {
 
         PlayerListPacket joiningEntry = playerList(PlayerListPacket.Action.ADD, List.of(listEntry(joining)));
         AddPlayerPacket joiningEntity = addPlayer(joining);
+        MobArmorEquipmentPacket joiningArmor = armor(joining);
         for (Player other : others(joining)) {
             joining.getSession().sendPacket(addPlayer(other));
+            joining.getSession().sendPacket(armor(other));
             other.getSession().sendPacket(joiningEntry);
             other.getSession().sendPacket(joiningEntity);
+            other.getSession().sendPacket(joiningArmor);
         }
     }
 
@@ -170,6 +174,11 @@ public class PlayerManager {
         return update;
     }
 
+    /** Shows everyone else what the player is wearing, after it changes. */
+    public void broadcastArmor(Player player) {
+        broadcast(player, armor(player));
+    }
+
     /** Shows everyone else the player swinging their arm. */
     public void broadcastSwing(Player swinger, AnimatePacket.SwingSource source) {
         AnimatePacket animate = new AnimatePacket();
@@ -200,6 +209,18 @@ public class PlayerManager {
             }
         }
         return others;
+    }
+
+    private static MobArmorEquipmentPacket armor(Player player) {
+        List<ItemData> worn = player.getInventory().getArmor();
+        MobArmorEquipmentPacket packet = new MobArmorEquipmentPacket();
+        packet.setRuntimeEntityId(player.getEntityId());
+        packet.setHelmet(worn.get(0));
+        packet.setChestplate(worn.get(1));
+        packet.setLeggings(worn.get(2));
+        packet.setBoots(worn.get(3));
+        packet.setBody(ItemData.AIR);
+        return packet;
     }
 
     private static LevelEventPacket levelEvent(LevelEvent event, Vector3f position, int data) {

@@ -2,7 +2,6 @@ package com.netherrack.server.network;
 
 import com.netherrack.server.Netherrack;
 import com.netherrack.server.block.Block;
-import com.netherrack.server.block.Blocks;
 import com.netherrack.server.entity.EntityIds;
 import com.netherrack.server.entity.ItemEntities;
 import com.netherrack.server.player.GameModes;
@@ -13,6 +12,7 @@ import com.netherrack.server.player.SkinParser;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.world.Chunk;
 import com.netherrack.server.world.World;
+import io.netty.buffer.Unpooled;
 import org.cloudburstmc.math.vector.Vector2f;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.math.vector.Vector3i;
@@ -32,12 +32,16 @@ import org.cloudburstmc.protocol.bedrock.data.PlayerAuthInputData;
 import org.cloudburstmc.protocol.bedrock.data.PlayerPermission;
 import org.cloudburstmc.protocol.bedrock.data.SpawnBiomeType;
 import org.cloudburstmc.protocol.bedrock.data.WorldType;
+import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerSlotType;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerType;
+import org.cloudburstmc.protocol.bedrock.data.inventory.FullContainerName;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequest;
+import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequestSlotData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.transaction.InventoryActionData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.transaction.InventorySource;
 import org.cloudburstmc.protocol.bedrock.data.inventory.transaction.InventoryTransactionType;
+import org.cloudburstmc.protocol.bedrock.data.inventory.transaction.LegacySetItemSlotData;
 import org.cloudburstmc.protocol.bedrock.data.skin.SerializedSkin;
 import org.cloudburstmc.nbt.NbtMap;
 import org.cloudburstmc.nbt.NbtType;
@@ -403,17 +407,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
         session.sendPacket(player.createAbilities());
 
-        giveStarterItems();
-    }
-
-    /**
-     * Until there's a real inventory system, every player starts with a stack of each
-     * block Netherrack has, so there's something to build with.
-     */
-    private void giveStarterItems() {
-        PlayerInventory inventory = player.getInventory();
-        inventory.set(0, vanillaData.blockItem(Blocks.GRASS_BLOCK, 64));
-        inventory.set(1, vanillaData.blockItem(Blocks.COBBLESTONE, 64));
+        // An empty inventory, until there's player data to load one from.
         sendInventory();
     }
 
@@ -519,26 +513,76 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
     }
 
     /**
-     * Using the held item. The only use handled so far is a right click on a block
-     * (action type 0), which places the held block against it.
+     * Using the held item (an "item use" transaction): a right click on a block (action
+     * type 0) places the held block against it, and using armor - in the air (action type
+     * 1) or on a block - puts it on, as vanilla does.
      * <p>
      * A "normal" transaction is the client throwing items out from the hotbar (pressing
      * Q), which it has already done on its side: one action takes the items out of an
-     * inventory slot, the other puts them into the world. The client is then shown its
-     * inventory as the server has it, whether or not the throw was valid.
+     * inventory slot, the other puts them into the world.
+     * <p>
+     * Either may carry a legacy request: slots the client already changed on its own, and
+     * will go on naming by the request's id until it's answered (see
+     * PlayerInventory.legacyResponse). After either, the client is shown its inventory as
+     * the server has it, whether or not what it did was valid.
      */
     @Override
     public PacketSignal handle(InventoryTransactionPacket packet) {
         if (player == null) {
             return PacketSignal.HANDLED;
         }
-        if (packet.getTransactionType() == InventoryTransactionType.ITEM_USE && packet.getActionType() == 0) {
-            blockInteraction.handleItemUse(player, packet);
+        PlayerInventory inventory = player.getInventory();
+        List<ItemData> armorBefore = inventory.getArmor();
+        boolean changedInventory = false;
+
+        if (packet.getTransactionType() == InventoryTransactionType.ITEM_USE
+                && (packet.getActionType() == 0 || packet.getActionType() == 1)) {
+            int heldId = packet.getItemInHand() != null && packet.getItemInHand().getDefinition() != null
+                    ? packet.getItemInHand().getDefinition().getRuntimeId() : 0;
+            if (inventory.equipHeld(packet.getHotbarSlot(), heldId)) {
+                changedInventory = true;
+            } else if (packet.getActionType() == 0) {
+                blockInteraction.handleItemUse(player, packet);
+            }
         } else if (packet.getTransactionType() == InventoryTransactionType.NORMAL) {
             throwFromHotbar(packet.getActions());
+            changedInventory = true;
+        }
+
+        if (packet.getLegacyRequestId() != 0) {
+            ItemStackResponsePacket response = new ItemStackResponsePacket();
+            response.getEntries().add(inventory.legacyResponse(packet.getLegacyRequestId(),
+                    legacySlots(packet.getLegacySlots())));
+            session.sendPacket(response);
+            changedInventory = true;
+        }
+        if (changedInventory) {
             sendInventory();
         }
+        if (!inventory.getArmor().equals(armorBefore)) {
+            players.broadcastArmor(player);
+        }
         return PacketSignal.HANDLED;
+    }
+
+    /**
+     * A legacy request's slots as item stack request slots. The containers arrive as their
+     * network ids, which differ from the library's ContainerSlotType order, so the codec's
+     * own table translates them.
+     */
+    private List<ItemStackRequestSlotData> legacySlots(List<LegacySetItemSlotData> legacySlots) {
+        List<ItemStackRequestSlotData> slots = new ArrayList<>();
+        for (LegacySetItemSlotData legacy : legacySlots) {
+            ContainerSlotType container = session.getPeer().getCodecHelper()
+                    .readContainerSlotType(Unpooled.wrappedBuffer(new byte[]{(byte) legacy.getContainerId()}));
+            if (container == null) {
+                continue;
+            }
+            for (byte slot : legacy.getSlots()) {
+                slots.add(new ItemStackRequestSlotData(container, slot, 0, new FullContainerName(container, null)));
+            }
+        }
+        return slots;
     }
 
     /** The client asking to move items around its inventory screen - see PlayerInventory. */
@@ -547,12 +591,16 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         if (player == null) {
             return PacketSignal.HANDLED;
         }
+        List<ItemData> armorBefore = player.getInventory().getArmor();
         ItemStackResponsePacket response = new ItemStackResponsePacket();
         for (ItemStackRequest request : packet.getRequests()) {
             response.getEntries().add(player.getInventory().handle(request, player.isCreative()));
         }
         session.sendPacket(response);
         throwDroppedItems();
+        if (!player.getInventory().getArmor().equals(armorBefore)) {
+            players.broadcastArmor(player);
+        }
         return PacketSignal.HANDLED;
     }
 
