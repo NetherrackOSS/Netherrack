@@ -45,7 +45,7 @@ Or if you're on Windows:
 mvnw.cmd clean package
 ```
 
-After running compiling, the Java archive file should be located at the ``target`` directory of the source code.
+After compiling, the Java archive file should be located at the ``target`` directory of the source code.
 
 After running ``java -jar netherrack-0.1.0-SNAPSHOT.jar`` or launching it via a start script for the first time, you should see something like this:
 
