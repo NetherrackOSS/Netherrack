@@ -21,7 +21,7 @@ Netherrack is an experimental vibe coded Minecraft: Bedrock Edition server softw
 > [!IMPORTANT]
 > Netherrack is not afilliated with Mojang or Microsoft.
 
-# 🛠️ Getting started
+# 🛠️ Getting Started
 Netherrack is written and running in Java 17. So you need to install Java 17 or newer. After you've installed Java 17 or newer, there is currently one way to install Netherrack.
 
 ## 🔧 Compiling from source
