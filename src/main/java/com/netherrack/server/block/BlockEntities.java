@@ -22,12 +22,12 @@ public final class BlockEntities {
     /** The block entity a block keeps once placed from this item, or null if it keeps none of its own. */
     public static NbtMap forPlaced(Block block, ItemData item, Placer placer) {
         String name = block.getIdentifier();
-        if (name.equals("minecraft:bed")) {
+        if (name.equals(BlockID.BED)) {
             NbtMapBuilder bed = named("Bed");
             bed.putByte("color", (byte) item.getDamage());
             return bed.build();
         }
-        if (name.equals("minecraft:standing_banner") || name.equals("minecraft:wall_banner")) {
+        if (name.equals(BlockID.STANDING_BANNER) || name.equals(BlockID.WALL_BANNER)) {
             NbtMapBuilder banner = named("Banner");
             banner.putInt("Base", item.getDamage());
             NbtMap tag = item.getTag();

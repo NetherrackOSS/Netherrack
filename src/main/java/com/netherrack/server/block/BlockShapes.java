@@ -16,13 +16,34 @@ public final class BlockShapes {
      * one half of tall grass or a large fern takes the other half away too.
      */
     private static final Set<String> REPLACEABLE = Set.of(
-            "minecraft:air", "minecraft:water", "minecraft:flowing_water", "minecraft:lava", "minecraft:flowing_lava",
-            "minecraft:fire", "minecraft:soul_fire", "minecraft:short_grass", "minecraft:fern", "minecraft:tall_grass",
-            "minecraft:large_fern", "minecraft:deadbush", "minecraft:bush", "minecraft:short_dry_grass",
-            "minecraft:tall_dry_grass", "minecraft:seagrass", "minecraft:crimson_roots", "minecraft:warped_roots",
-            "minecraft:nether_sprouts", "minecraft:hanging_roots", "minecraft:glow_lichen", "minecraft:sculk_vein",
-            "minecraft:vine", "minecraft:leaf_litter", "minecraft:pale_hanging_moss", "minecraft:snow_layer",
-            "minecraft:structure_void");
+            BlockID.AIR,
+            BlockID.WATER,
+            BlockID.FLOWING_WATER,
+            BlockID.LAVA,
+            BlockID.FLOWING_LAVA,
+            BlockID.FIRE,
+            BlockID.SOUL_FIRE,
+            BlockID.SHORT_GRASS,
+            BlockID.FERN,
+            BlockID.TALL_GRASS,
+            BlockID.LARGE_FERN,
+            BlockID.DEADBUSH,
+            BlockID.BUSH,
+            BlockID.SHORT_DRY_GRASS,
+            BlockID.TALL_DRY_GRASS,
+            BlockID.SEAGRASS,
+            BlockID.CRIMSON_ROOTS,
+            BlockID.WARPED_ROOTS,
+            BlockID.NETHER_SPROUTS,
+            BlockID.HANGING_ROOTS,
+            BlockID.GLOW_LICHEN,
+            BlockID.SCULK_VEIN,
+            BlockID.VINE,
+            BlockID.LEAF_LITTER,
+            BlockID.PALE_HANGING_MOSS,
+            BlockID.SNOW_LAYER,
+            BlockID.STRUCTURE_VOID
+    );
 
     /** A whole block's space. */
     private static final Box WHOLE = new Box(0, 0, 0, 1, 1, 1);
@@ -67,7 +88,7 @@ public final class BlockShapes {
         }
         String name = block.getIdentifier();
         return REPLACEABLE.contains(name)
-                && !(name.equals("minecraft:snow_layer") && !Integer.valueOf(0).equals(block.getProperty("height")));
+                && !(name.equals(BlockID.SNOW_LAYER) && !Integer.valueOf(0).equals(block.getProperty("height")));
     }
 
     /**
@@ -89,14 +110,14 @@ public final class BlockShapes {
         if (name.endsWith("carpet")) {
             return sixteenths(0, 0, 0, 16, 1, 16);
         }
-        if (name.equals("minecraft:bed") || name.equals("minecraft:straw_bed")) {
+        if (name.equals(BlockID.BED) || name.equals(BlockID.STRAW_BED)) {
             return sixteenths(0, 0, 0, 16, 9, 16);
         }
         if (name.endsWith("trapdoor") && !block.isSet("open_bit")) {
             return block.isSet("upside_down_bit") ? sixteenths(0, 16 - PLATE, 0, 16, 16, 16)
                     : sixteenths(0, 0, 0, 16, PLATE, 16);
         }
-        if (name.equals("minecraft:ladder") && block.getProperty("facing_direction") instanceof Integer facing
+        if (name.equals(BlockID.LADDER) && block.getProperty("facing_direction") instanceof Integer facing
                 && Face.of(facing) != null && Face.of(facing).isHorizontal()) {
             // Against the wall behind it, which is on the side it faces away from.
             return switch (Face.of(facing).opposite()) {

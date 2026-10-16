@@ -18,10 +18,22 @@ public final class BlockItems {
 
     /** Items that place the block of their own name, though they carry no block state. */
     private static final Set<String> PLACES_ITSELF = Set.of(
-            "minecraft:cauldron", "minecraft:flower_pot", "minecraft:hopper", "minecraft:cake", "minecraft:campfire",
-            "minecraft:soul_campfire", "minecraft:brewing_stand", "minecraft:frame", "minecraft:glow_frame",
-            "minecraft:nether_wart", "minecraft:shelf_mushroom", "minecraft:nether_sprouts", "minecraft:kelp",
-            "minecraft:bed", "minecraft:straw_bed");
+            BlockID.CAULDRON,
+            BlockID.FLOWER_POT,
+            BlockID.HOPPER,
+            BlockID.CAKE,
+            BlockID.CAMPFIRE,
+            BlockID.SOUL_CAMPFIRE,
+            BlockID.BREWING_STAND,
+            BlockID.FRAME,
+            BlockID.GLOW_FRAME,
+            BlockID.NETHER_WART,
+            BlockID.SHELF_MUSHROOM,
+            BlockID.NETHER_SPROUTS,
+            BlockID.KELP,
+            BlockID.BED,
+            BlockID.STRAW_BED
+    );
 
     /** Blocks that drop an item of another name: the reverse of PLACES, and a few more. */
     private static final Map<String, String> ITEM_PLACING = new HashMap<>();

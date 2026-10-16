@@ -21,10 +21,8 @@ public final class BlockConnections {
 
     /** Whole blocks that nothing joins, besides leaves and shulker boxes. */
     private static final Set<String> KEPT_APART = Set.of(
-            "minecraft:barrier", "minecraft:pumpkin", "minecraft:carved_pumpkin", "minecraft:lit_pumpkin",
-            "minecraft:melon_block");
-
-    private static final String NETHER_BRICK_FENCE = "minecraft:nether_brick_fence";
+            BlockID.BARRIER, BlockID.PUMPKIN, BlockID.CARVED_PUMPKIN, BlockID.LIT_PUMPKIN,
+            BlockID.MELON_BLOCK);
 
     private BlockConnections() {
     }
@@ -99,7 +97,7 @@ public final class BlockConnections {
         }
         if (isFence(block)) {
             return isFence(neighbour)
-                    && neighbour.getIdentifier().equals(NETHER_BRICK_FENCE) == block.getIdentifier().equals(NETHER_BRICK_FENCE);
+                    && neighbour.getIdentifier().equals(BlockID.NETHER_BRICK_FENCE) == block.getIdentifier().equals(BlockID.NETHER_BRICK_FENCE);
         }
         return isPane(neighbour) || isWall(neighbour);
     }

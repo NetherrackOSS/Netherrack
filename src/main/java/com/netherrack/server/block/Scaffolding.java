@@ -16,8 +16,6 @@ import org.cloudburstmc.math.vector.Vector3i;
  */
 public final class Scaffolding {
 
-    public static final String NAME = "minecraft:scaffolding";
-
     /** How far scaffolding reaches out from what holds it up, plus one: at this distance, it can't stay. */
     public static final int MAX_DISTANCE = 7;
 
@@ -27,7 +25,7 @@ public final class Scaffolding {
     }
 
     public static boolean is(Block block) {
-        return block != null && block.getIdentifier().equals(NAME);
+        return block != null && block.getIdentifier().equals(BlockID.SCAFFOLDING);
     }
 
     /** How far the scaffolding at a position is from what holds it up, or MAX_DISTANCE if nothing does. */

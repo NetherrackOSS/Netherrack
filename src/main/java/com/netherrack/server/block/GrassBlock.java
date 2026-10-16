@@ -9,6 +9,6 @@ package com.netherrack.server.block;
 public class GrassBlock extends Block {
 
     public GrassBlock() {
-        super("minecraft:grass_block");
+        super(GRASS_BLOCK);
     }
 }

@@ -16,9 +16,6 @@ import java.util.List;
  */
 public final class Tripwire {
 
-    public static final String WIRE = "minecraft:trip_wire";
-    public static final String HOOK = "minecraft:tripwire_hook";
-
     /** How far apart, at most, two hooks can be and still be strung together. */
     public static final int REACH = 41;
 
@@ -29,11 +26,11 @@ public final class Tripwire {
     }
 
     public static boolean isWire(Block block) {
-        return block != null && block.getIdentifier().equals(WIRE);
+        return block != null && block.getIdentifier().equals(BlockID.TRIP_WIRE);
     }
 
     public static boolean isHook(Block block) {
-        return block != null && block.getIdentifier().equals(HOOK);
+        return block != null && block.getIdentifier().equals(BlockID.TRIPWIRE_HOOK);
     }
 
     /** Tripwire joined to the tripwire and hooks beside it, and attached if it's strung between two hooks. */

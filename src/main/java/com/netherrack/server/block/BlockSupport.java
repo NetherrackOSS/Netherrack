@@ -329,7 +329,7 @@ public final class BlockSupport {
         if (holder != null && !holdsUp(world, holder.from(position), holder.opposite(), block)) {
             return false;
         }
-        if (block.getIdentifier().equals("minecraft:cactus")) {
+        if (block.getIdentifier().equals(BlockID.CACTUS)) {
             for (Face side : Face.AROUND) {
                 Vector3i beside = side.from(position);
                 Block neighbour = world.getBlock(beside.getX(), beside.getY(), beside.getZ());
@@ -381,8 +381,8 @@ public final class BlockSupport {
      */
     public static boolean isTwoTall(Block block) {
         String name = block.getIdentifier();
-        return block.hasProperty(UPPER_BLOCK) && !name.equals("minecraft:pale_moss_carpet")
-                && !name.equals("minecraft:pitcher_crop");
+        return block.hasProperty(UPPER_BLOCK) && !name.equals(BlockID.PALE_MOSS_CARPET)
+                && !name.equals(BlockID.PITCHER_CROP);
     }
 
     private static boolean isTerracotta(String bare) {
@@ -394,9 +394,9 @@ public final class BlockSupport {
         for (Face side : Face.AROUND) {
             Vector3i beside = side.from(position);
             Block block = world.getBlock(beside.getX(), beside.getY(), beside.getZ());
-            if (block != null && (block.getIdentifier().equals("minecraft:water")
-                    || block.getIdentifier().equals("minecraft:flowing_water")
-                    || block.getIdentifier().equals("minecraft:frosted_ice"))) {
+            if (block != null && (block.getIdentifier().equals(BlockID.WATER)
+                    || block.getIdentifier().equals(BlockID.FLOWING_WATER)
+                    || block.getIdentifier().equals(BlockID.FROSTED_ICE))) {
                 return true;
             }
         }

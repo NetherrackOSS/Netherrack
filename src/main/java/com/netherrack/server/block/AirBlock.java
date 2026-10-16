@@ -7,6 +7,6 @@ package com.netherrack.server.block;
 public class AirBlock extends Block {
 
     public AirBlock() {
-        super("minecraft:air");
+        super(AIR);
     }
 }

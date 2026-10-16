@@ -24,7 +24,7 @@ public final class BlockUse {
     private static final int STONE_BUTTON_TICKS = 20;
     private static final int WOODEN_BUTTON_TICKS = 30;
 
-    private static final Set<String> OPENED_BY_REDSTONE = Set.of("minecraft:iron_door", "minecraft:iron_trapdoor");
+    private static final Set<String> OPENED_BY_REDSTONE = Set.of(BlockID.IRON_DOOR, BlockID.IRON_TRAPDOOR);
 
     /**
      * Blocks that open a screen, or do something of their own, when clicked: containers,
@@ -55,7 +55,7 @@ public final class BlockUse {
             return false;
         }
         String name = block.getIdentifier();
-        return name.equals("minecraft:lever") || name.endsWith("button")
+        return name.equals(BlockID.LEVER) || name.endsWith("button")
                 || (!OPENED_BY_REDSTONE.contains(name)
                 && (name.endsWith("_door") || name.endsWith("trapdoor") || name.endsWith("fence_gate")));
     }
@@ -87,7 +87,7 @@ public final class BlockUse {
             return null;
         }
         String name = block.getIdentifier();
-        if (name.equals("minecraft:lever")) {
+        if (name.equals(BlockID.LEVER)) {
             boolean on = !block.isSet(OPEN);
             return change(world, position, block.with(OPEN, Block.bit(on)), on ? SoundEvent.POWER_ON : SoundEvent.POWER_OFF);
         }

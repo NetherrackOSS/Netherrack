@@ -1,4 +1,8 @@
-instances/
-target/
-dependency-reduced-pom.xml
 logs/
+target/
+worlds/
+
+dependency-reduced-pom.xml
+netherrack.yml
+permissions.json
+server.properties

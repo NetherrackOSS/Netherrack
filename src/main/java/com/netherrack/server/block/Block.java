@@ -7,7 +7,7 @@ import org.cloudburstmc.nbt.NbtMapBuilder;
  * A block state: a block's namespaced id plus its states (which way stairs face, what
  * color wool is...), the way vanilla stores it in a world's palettes.
  */
-public class Block {
+public class Block implements BlockID {
 
     /**
      * The block state version every state of this game version carries in saved worlds:
