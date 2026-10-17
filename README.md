@@ -20,7 +20,7 @@
 </p>
 
 > [!WARNING]
-> Netherrack is currently in pre-alpha. Expect missing features, bugs and glitches.
+> Netherrack is currently in alpha. Expect missing features, bugs and glitches.
 
 # ℹ️ Information
 Netherrack is an experimental vibe coded Minecraft: Bedrock Edition server software project focused on learning, experimentation, and building a server implementation from the ground up.
