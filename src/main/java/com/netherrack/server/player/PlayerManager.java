@@ -109,9 +109,10 @@ public class PlayerManager {
         updateVisibility();
     }
 
-    public synchronized void leave(Player leaving) {
+    /** @return whether they had joined - false if they left before finishing loading in. */
+    public synchronized boolean leave(Player leaving) {
         if (players.remove(leaving.getUuid()) == null) {
-            return; // never finished joining, so nobody was shown them
+            return false; // never finished joining, so nobody was shown them
         }
         shownEquipment.remove(leaving);
 
@@ -123,6 +124,7 @@ public class PlayerManager {
             }
             other.getSession().sendPacket(removeFromList);
         }
+        return true;
     }
 
     /**
@@ -204,6 +206,23 @@ public class PlayerManager {
         text.setXuid(sender.getXuid());
         text.setMessage(message);
         text.setNeedsTranslation(false);
+        for (Player player : players.values()) {
+            player.getSession().sendPacket(text);
+        }
+    }
+
+    /**
+     * Tells every player in the world, in yellow as vanilla does, that someone joined or left.
+     * The wording is vanilla's own translation key, so each client shows it in its own language.
+     */
+    public void broadcastPresence(boolean joined, String username) {
+        TextPacket text = new TextPacket();
+        text.setType(TextPacket.Type.TRANSLATION);
+        text.setSourceName("");
+        text.setXuid("");
+        text.setNeedsTranslation(true);
+        text.setMessage("\u00a7e%multiplayer.player." + (joined ? "joined" : "left"));
+        text.getParameters().add(username);
         for (Player player : players.values()) {
             player.getSession().sendPacket(text);
         }

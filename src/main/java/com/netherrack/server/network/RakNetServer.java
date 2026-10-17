@@ -97,10 +97,11 @@ public class RakNetServer {
 
     public void stop() {
         if (channel != null) {
-            channel.close().syncUninterruptibly();
+            // Bounded, so a connection that won't close can't keep the server from stopping.
+            channel.close().awaitUninterruptibly(5, java.util.concurrent.TimeUnit.SECONDS);
         }
         if (eventLoopGroup != null) {
-            eventLoopGroup.shutdownGracefully();
+            eventLoopGroup.shutdownGracefully(0, 2, java.util.concurrent.TimeUnit.SECONDS);
         }
     }
 

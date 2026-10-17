@@ -63,6 +63,7 @@ public class Netherrack {
     private ScheduledExecutorService autosave;
     private boolean worldClosed;
     private volatile boolean running = true;
+    private final java.util.concurrent.atomic.AtomicBoolean stopping = new java.util.concurrent.atomic.AtomicBoolean();
 
     public Netherrack() {
         this.config = new ServerConfig(Path.of("server.properties"));
@@ -244,7 +245,23 @@ public class Netherrack {
         }
     }
 
+    /**
+     * Stops the server. Safe to call from any thread, and more than once: the stopping itself
+     * always runs on its own thread, never the caller's. That matters when a player's /stop
+     * arrives on a network thread - closing the RakNet channel waits on that same thread to
+     * close the player's connection, so stopping from it would wait on itself forever (the
+     * player gets kicked and the server never stops, and a second /stop from the console
+     * then waits on the same stuck close).
+     */
     public void shutdown() {
+        if (!stopping.compareAndSet(false, true)) {
+            return;
+        }
+        Thread thread = new Thread(this::stopServer, "Server shutdown");
+        thread.start();
+    }
+
+    private void stopServer() {
         Logger.info(Lang.current.get("server.stopping"));
         // Players see why they were let go, rather than losing the connection.
         String message = settings.getString("messages.server-shutdown");
@@ -252,7 +269,11 @@ public class Netherrack {
             player.getSession().disconnect(message);
         }
         sleep(200);
-        rakNetServer.stop();
+        try {
+            rakNetServer.stop();
+        } catch (RuntimeException e) {
+            Logger.error("Error closing the network listener: " + e);
+        }
         ticker.shutdownNow();
         closeWorld();
         Logger.info(Lang.current.get("server.closed"));

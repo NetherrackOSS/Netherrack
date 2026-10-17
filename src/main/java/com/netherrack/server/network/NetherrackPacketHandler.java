@@ -12,6 +12,7 @@ import com.netherrack.server.player.PlayerData;
 import com.netherrack.server.player.PlayerInventory;
 import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.player.SkinParser;
+import com.netherrack.server.setup.Lang;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.world.World;
 import io.netty.buffer.Unpooled;
@@ -468,11 +469,12 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
     @Override
     public PacketSignal handle(SetLocalPlayerAsInitializedPacket packet) {
-        Logger.info(username + " joined the game.");
-
         // Only now, with the client past its loading screen, is the player actually in
         // the world for others to see. The items around them appear on the next tick.
         players.join(player);
+
+        Logger.info(Lang.current.get("player.joined", username));
+        players.broadcastPresence(true, username);
 
         return PacketSignal.HANDLED;
     }
@@ -790,7 +792,10 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             // Saved before they leave the player list: stopping the server saves everyone
             // still on it, so whoever is leaving at that moment is saved one way or the other.
             world.savePlayer(player.getUuid(), PlayerData.save(player));
-            players.leave(player);
+            if (players.leave(player)) {
+                Logger.info(Lang.current.get("player.left", username));
+                players.broadcastPresence(false, username);
+            }
         }
     }
 
