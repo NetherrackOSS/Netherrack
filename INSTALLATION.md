@@ -1,3 +1,5 @@
+# Installation Instructions
+
 To download and install Netherrack, head to the [Releases](https://github.com/NetherrackOSS/Netherrack/releases) page for the GitHub repository, download the latest JAR file, move the JAR file to another directory (example: ``netherrack-server``), then launch it via:
 
 ```
