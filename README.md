@@ -28,7 +28,14 @@ Netherrack is an experimental vibe coded Minecraft: Bedrock Edition server softw
 > Netherrack is not afilliated with Mojang or Microsoft.
 
 # 🛠️ Getting Started
-Netherrack is written and running in Java 17. So you need to install Java 17 or newer. After you've installed Java 17 or newer, there is currently one way to install Netherrack.
+Netherrack is written and running in Java 17. So you need to install Java 17 or newer. After you've installed Java 17 or newer, there are currently two ways to install Netherrack.
+
+## 🔨 Downloading Netherrack
+To download Netherrack, head to the [Releases](https://github.com/NetherrackOSS/Netherrack/releases) page for the GitHub repository, download the latest JAR file, move the JAR file to another directory (example: ``netherrack-server``), then launch it via:
+
+```
+java -jar netherrack-0.1.0-alpha.jar
+```
 
 ## 🔧 Compiling from source
 To compile Netherrack from source, you'll need:
@@ -42,7 +49,7 @@ git clone https://github.com/NetherrackOSS/Netherrack
 cd Netherrack
 ```
 
-To compile the project, run this command if you're on a Unix-based OS like Mac or Linux.
+To compile Netherrack, run this command if you're on a Unix-based OS like Mac or Linux.
 ```
 ./mvnw clean package
 ```
@@ -51,7 +58,7 @@ Or if you're on Windows:
 mvnw.cmd clean package
 ```
 
-After compiling, the Java archive file should be located at the ``target`` directory of the source code.
+After compiling, the JAR file should be located at the ``target`` directory of the source code.
 
 After running ``java -jar netherrack-0.1.0-alpha.jar`` or launching it via a start script for the first time, you should see something like this:
 
