@@ -2,6 +2,9 @@ package com.netherrack.server.player;
 
 import com.netherrack.server.block.Block;
 import com.netherrack.server.network.HashedBlockDefinitions;
+import com.netherrack.server.setup.Lang;
+import com.netherrack.server.util.ColorCodes;
+import com.netherrack.server.util.Logger;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.math.vector.Vector3i;
 import org.cloudburstmc.nbt.NbtMap;
@@ -200,6 +203,10 @@ public class PlayerManager {
      * included - the same way vanilla echoes a sent message back to its own sender.
      */
     public void broadcastChat(Player sender, String message) {
+        // Logged here rather than by whoever sent it, so a chat message is in the console
+        // the same way wherever it comes from. Formatting codes in it show as colors there.
+        Logger.info("<" + sender.getUsername() + "> " + message);
+
         TextPacket text = new TextPacket();
         text.setType(TextPacket.Type.CHAT);
         text.setSourceName(sender.getUsername());
@@ -212,10 +219,14 @@ public class PlayerManager {
     }
 
     /**
-     * Tells every player in the world, in yellow as vanilla does, that someone joined or left.
-     * The wording is vanilla's own translation key, so each client shows it in its own language.
+     * Tells every player in the world, in yellow as vanilla does, that someone joined or left,
+     * and the console. Players see vanilla's own translation key, so each client shows it in
+     * its own language.
      */
     public void broadcastPresence(boolean joined, String username) {
+        // The console gets it in yellow too, worded by Netherrack's own lang file.
+        Logger.info(ColorCodes.PREFIX + "e" + Lang.current.get(joined ? "player.joined" : "player.left", username));
+
         TextPacket text = new TextPacket();
         text.setType(TextPacket.Type.TRANSLATION);
         text.setSourceName("");

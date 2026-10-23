@@ -15,6 +15,9 @@ import java.time.format.DateTimeFormatter;
  * Brackets are left in the default terminal color; only the content inside
  * each segment (timestamp, thread name, level) is colored.
  * <p>
+ * A message may hold Minecraft formatting codes ("§e" for yellow, see {@link ColorCodes}):
+ * the console shows them as colors, and the log file leaves them out.
+ * <p>
  * Every line is also written, uncolored, to a log file once {@link #openLogFile(Path)} has
  * been called. DEBUG lines go only to that file: with debug logging on, the network
  * libraries log every packet, which buries everything else on the console and scrolls past
@@ -71,9 +74,13 @@ public final class Logger {
     private static synchronized void log(String level, String message, String levelColor) {
         String time = LocalTime.now().format(TIME_FORMAT);
         String thread = Thread.currentThread().getName();
+        // Escape sequences in the text itself are never the server's own, so they're dropped:
+        // text that came from a player must not be able to color or rewrite the console. The
+        // formatting codes (like "§e") are what's meant to be colored.
+        message = ColorCodes.removeControlCharacters(message);
 
         if (logFile != null) {
-            logFile.println("[" + time + "] [" + thread + "] [" + level + "] " + message);
+            logFile.println("[" + time + "] [" + thread + "] [" + level + "] " + ColorCodes.strip(message));
             // Flushed per line so the file is complete even if the server is killed or crashes.
             logFile.flush();
         }
@@ -91,7 +98,7 @@ public final class Logger {
             line.append(level);
         }
         line.append(']');
-        line.append(' ').append(message);
+        line.append(' ').append(ColorCodes.toAnsi(message));
         // Above the console's prompt, which is drawn again below it with whatever's been typed.
         Console.print(line.toString());
     }

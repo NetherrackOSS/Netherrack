@@ -6,7 +6,7 @@
 
     <groupId>com.netherrack</groupId>
     <artifactId>netherrack-server</artifactId>
-    <version>0.1.0-alpha</version>
+    <version>0.2.0-alpha</version>
     <packaging>jar</packaging>
 
     <name>Netherrack</name>
@@ -122,7 +122,55 @@
 
     <build>
         <finalName>netherrack-${project.version}</finalName>
+        <resources>
+            <!-- Only version.properties is filtered (its ${project.version} is replaced with the
+                 version above, which is where VersionInfo reads it from). Everything else is
+                 copied as it is - filtering would corrupt the binary .nbt data files. -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>version.properties</exclude>
+                </excludes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>version.properties</include>
+                </includes>
+            </resource>
+        </resources>
         <plugins>
+            <!-- Writes the short id of the git commit being built into git.properties, which
+                 VersionInfo reads for /version. Only that one property is kept: by default the
+                 file also holds the committer's name and email and the remote's URL, which
+                 shouldn't end up inside a jar that gets shared. Building outside a git checkout
+                 (a downloaded source archive, say) is fine - nothing is written, and the commit
+                 shows as "unknown". -->
+            <plugin>
+                <groupId>io.github.git-commit-id</groupId>
+                <artifactId>git-commit-id-maven-plugin</artifactId>
+                <version>8.0.2</version>
+                <executions>
+                    <execution>
+                        <id>get-the-git-infos</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>revision</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <generateGitPropertiesFile>true</generateGitPropertiesFile>
+                    <generateGitPropertiesFilename>${project.build.outputDirectory}/git.properties</generateGitPropertiesFilename>
+                    <failOnNoGitDirectory>false</failOnNoGitDirectory>
+                    <failOnUnableToExtractRepoInfo>false</failOnUnableToExtractRepoInfo>
+                    <includeOnlyProperties>
+                        <includeOnlyProperty>^git\.commit\.id\.abbrev$</includeOnlyProperty>
+                    </includeOnlyProperties>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>

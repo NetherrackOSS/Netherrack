@@ -41,7 +41,7 @@ import java.util.concurrent.TimeUnit;
 
 public class Netherrack {
 
-    public static final String VERSION = "0.1.0";
+    public static final String VERSION = VersionInfo.VERSION;
 
     /** 20 ticks a second. */
     private static final long TICK_MILLIS = 50;

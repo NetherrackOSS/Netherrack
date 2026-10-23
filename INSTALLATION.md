@@ -11,7 +11,7 @@ You can also launch Netherrack via a ``start.sh``, ``start.bat``, or a ``start.c
 After running ``java -jar netherrack-0.1.0-alpha.jar`` or launching it via a start script for the first time, you should see something like this:
 
 ```
-[16:01:07] [main] [INFO] Starting Netherrack server version 0.1.0
+[16:01:07] [main] [INFO] Starting Netherrack server version 0.1.0-alpha
 [16:01:07] [main] [INFO] First-time setup detected. Launching setup wizard...
 
 ═══════════════════════════════════════════════════════════════

@@ -12,7 +12,7 @@ import com.netherrack.server.player.PlayerData;
 import com.netherrack.server.player.PlayerInventory;
 import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.player.SkinParser;
-import com.netherrack.server.setup.Lang;
+import com.netherrack.server.util.ColorCodes;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.world.World;
 import io.netty.buffer.Unpooled;
@@ -473,7 +473,6 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         // the world for others to see. The items around them appear on the next tick.
         players.join(player);
 
-        Logger.info(Lang.current.get("player.joined", username));
         players.broadcastPresence(true, username);
 
         return PacketSignal.HANDLED;
@@ -565,12 +564,16 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         if (message == null || message.isBlank()) {
             return PacketSignal.HANDLED;
         }
-        message = message.trim();
+        // On one line, with no control characters: it goes into the log and to everyone's
+        // chat, where a line break or escape sequence in it could pass for something else.
+        message = ColorCodes.singleLine(message).trim();
+        if (message.isEmpty()) {
+            return PacketSignal.HANDLED;
+        }
 
         if (message.startsWith("/")) {
             runCommand(message, null);
         } else {
-            Logger.info("<" + username + "> " + message);
             players.broadcastChat(player, message);
         }
 
@@ -594,6 +597,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
      * CommandManager). The origin is the request's, which replies answer to.
      */
     private void runCommand(String command, CommandOriginData origin) {
+        command = ColorCodes.singleLine(command);
         Logger.info(username + " issued command: " + command);
         String input = command.startsWith("/") ? command.substring(1) : command;
         netherrack.getCommandManager().dispatch(netherrack, new PlayerCommandSender(player, origin), input);
@@ -793,7 +797,6 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             // still on it, so whoever is leaving at that moment is saved one way or the other.
             world.savePlayer(player.getUuid(), PlayerData.save(player));
             if (players.leave(player)) {
-                Logger.info(Lang.current.get("player.left", username));
                 players.broadcastPresence(false, username);
             }
         }
