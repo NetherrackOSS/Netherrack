@@ -34,13 +34,12 @@ Netherrack is written and running in Java 17. So you need to install Java 17 or 
 To download Netherrack, head to the [Releases](https://github.com/NetherrackOSS/Netherrack/releases) page for the GitHub repository, download the latest JAR file, move the JAR file to another directory (example: ``netherrack-server``), then launch it via:
 
 ```
-java -jar netherrack-0.1.0-alpha.jar
+java -jar netherrack.jar
 ```
 
 ## 🔧 Compiling from source
 To compile Netherrack from source, you'll need:
 - Git
-- Maven 3 or newer
 - Java 17 or newer
 
 Run these commands in your terminal or command prompt:
@@ -60,7 +59,7 @@ mvnw.cmd clean package
 
 After compiling, the JAR file should be located at the ``target`` directory of the source code.
 
-After running ``java -jar netherrack-0.1.0-alpha.jar`` or launching it via a start script for the first time, you should see something like this:
+After running ``java -jar netherrack.jar`` or launching it via a start script for the first time, you should see something like this:
 
 ```
 [16:01:07] [main] [INFO] Starting Netherrack server version 0.1.0-alpha
