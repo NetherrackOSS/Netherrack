@@ -1,6 +1,6 @@
 #!/bin/bash
 
-JAR_FILE="netherrack-0.1.0-alpha.jar"
+JAR_FILE="netherrack.jar"
 
 if [ ! -f "$JAR_FILE" ]; then
     echo "Error: The JAR file for the server was not found."
