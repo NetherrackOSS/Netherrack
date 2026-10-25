@@ -121,7 +121,7 @@
     </dependencies>
 
     <build>
-        <finalName>netherrack-${project.version}</finalName>
+        <finalName>netherrack</finalName>
         <resources>
             <!-- Only version.properties is filtered (its ${project.version} is replaced with the
                  version above, which is where VersionInfo reads it from). Everything else is
