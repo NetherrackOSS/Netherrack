@@ -10,7 +10,7 @@
     <packaging>jar</packaging>
 
     <name>Netherrack</name>
-    <description>A from-scratch Minecraft Bedrock server software (simulation stage)</description>
+    <description>A from-scratch Minecraft Bedrock server software</description>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
