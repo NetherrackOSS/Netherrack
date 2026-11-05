@@ -11,7 +11,7 @@ import com.netherrack.server.command.StopCommand;
 import com.netherrack.server.command.VersionCommand;
 import com.netherrack.server.entity.ItemEntities;
 import com.netherrack.server.network.ChunkViews;
-import com.netherrack.server.network.RakNetServer;
+import com.netherrack.server.network.NetherNetServer;
 import com.netherrack.server.network.TripwireSensor;
 import com.netherrack.server.player.GameModes;
 import com.netherrack.server.player.Permission;
@@ -49,7 +49,7 @@ public class Netherrack {
 
     private final ServerConfig config;
     private final NetherrackConfig settings;
-    private final RakNetServer rakNetServer;
+    private final NetherNetServer netherNetServer;
     private final PlayerManager playerManager = new PlayerManager();
     private final WorldManager worldManager;
     private final CommandManager commandManager;
@@ -68,7 +68,7 @@ public class Netherrack {
     public Netherrack() {
         this.config = new ServerConfig(Path.of("server.properties"));
         this.settings = new NetherrackConfig(NetherrackConfig.FILE);
-        this.rakNetServer = new RakNetServer(config);
+        this.netherNetServer = new NetherNetServer(config);
         this.worldManager = new WorldManager(config, settings);
 
         this.commandManager = new CommandManager();
@@ -204,7 +204,7 @@ public class Netherrack {
         chunkViews = new ChunkViews(world);
         tripwires = new TripwireSensor(world, playerManager);
         startTicking();
-        rakNetServer.start(world, playerManager, this);
+        netherNetServer.start(world, playerManager, this);
 
         sleep(150);
         Logger.info(lang.get("server.early_build"));
@@ -248,7 +248,7 @@ public class Netherrack {
     /**
      * Stops the server. Safe to call from any thread, and more than once: the stopping itself
      * always runs on its own thread, never the caller's. That matters when a player's /stop
-     * arrives on a network thread - closing the RakNet channel waits on that same thread to
+     * arrives on a network thread - closing the server channel waits on that same thread to
      * close the player's connection, so stopping from it would wait on itself forever (the
      * player gets kicked and the server never stops, and a second /stop from the console
      * then waits on the same stuck close).
@@ -270,7 +270,7 @@ public class Netherrack {
         }
         sleep(200);
         try {
-            rakNetServer.stop();
+            netherNetServer.stop();
         } catch (RuntimeException e) {
             Logger.error("Error closing the network listener: " + e);
         }

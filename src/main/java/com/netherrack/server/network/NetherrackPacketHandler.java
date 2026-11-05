@@ -19,8 +19,9 @@ import io.netty.buffer.Unpooled;
 import org.cloudburstmc.math.vector.Vector2f;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.math.vector.Vector3i;
+import org.cloudburstmc.netty.util.nethernet.TransportIdentityBinding;
 import org.cloudburstmc.protocol.bedrock.BedrockServerSession;
-import org.cloudburstmc.protocol.bedrock.codec.v2193.Bedrock_v2193;
+import org.cloudburstmc.protocol.bedrock.codec.v2225.Bedrock_v2225;
 import org.cloudburstmc.protocol.bedrock.data.AuthoritativeMovementMode;
 import org.cloudburstmc.protocol.bedrock.data.ChatRestrictionLevel;
 import org.cloudburstmc.protocol.bedrock.data.EduSharedUriResource;
@@ -34,7 +35,7 @@ import org.cloudburstmc.protocol.bedrock.data.PlayerActionType;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandOriginData;
 import org.cloudburstmc.protocol.bedrock.data.PlayerAuthInputData;
 import org.cloudburstmc.protocol.bedrock.data.SpawnBiomeType;
-import org.cloudburstmc.protocol.bedrock.data.WorldType;
+import org.cloudburstmc.protocol.bedrock.data.editor.WorldType;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerId;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerSlotType;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerType;
@@ -56,7 +57,6 @@ import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacketHandler;
 import org.cloudburstmc.protocol.bedrock.packet.BiomeDefinitionListPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ChunkRadiusUpdatedPacket;
-import org.cloudburstmc.protocol.bedrock.packet.ClientToServerHandshakePacket;
 import org.cloudburstmc.protocol.bedrock.packet.CommandRequestPacket;
 import org.cloudburstmc.protocol.bedrock.packet.CraftingDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.CreativeContentPacket;
@@ -75,7 +75,6 @@ import org.cloudburstmc.protocol.bedrock.packet.LoginPacket;
 import org.cloudburstmc.protocol.bedrock.packet.NetworkSettingsPacket;
 import org.cloudburstmc.protocol.bedrock.packet.PlayerActionPacket;
 import org.cloudburstmc.protocol.bedrock.packet.PlayerAuthInputPacket;
-import org.cloudburstmc.protocol.bedrock.packet.ServerToClientHandshakePacket;
 import org.cloudburstmc.protocol.bedrock.packet.PlayStatusPacket;
 import org.cloudburstmc.protocol.bedrock.packet.PlayerHotbarPacket;
 import org.cloudburstmc.protocol.bedrock.packet.RequestChunkRadiusPacket;
@@ -96,9 +95,7 @@ import org.cloudburstmc.protocol.common.PacketSignal;
 import org.cloudburstmc.protocol.common.util.OptionalBoolean;
 import org.jose4j.json.JsonUtil;
 
-import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
-import java.security.KeyPair;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -115,7 +112,7 @@ import java.util.concurrent.ThreadLocalRandom;
  * -> RequestChunkRadius -> ChunkRadiusUpdated -> NetworkChunkPublisherUpdate -> LevelChunk(s)
  * -> PlayStatus(PLAYER_SPAWN) -> SetLocalPlayerAsInitialized
  * <p>
- * Targets Bedrock_v2193 (1.26.50) because that's what the real client actually speaks on
+ * Targets Bedrock_v2225 (1.26.60) because that's what the real client actually speaks on
  * the wire - the codec has to match the client's real protocol version, full stop, or every
  * packet after the first few shared fields fails to decode. The bundled vanilla data (see
  * VanillaData) is a separate concern: it's currently from the "bedrock-1.26.30" BedrockData
@@ -149,7 +146,6 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
     private volatile String username;
     private volatile String uuid;
-    private volatile boolean awaitingHandshakeAck;
     private volatile Vector3f spawnPosition;
     private volatile boolean spawned;
     private volatile String xuid = "";
@@ -180,14 +176,14 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
     @Override
     public PacketSignal handle(RequestNetworkSettingsPacket packet) {
         int clientProtocol = packet.getProtocolVersion();
-        int serverProtocol = Bedrock_v2193.CODEC.getProtocolVersion();
+        int serverProtocol = Bedrock_v2225.CODEC.getProtocolVersion();
 
         if (clientProtocol != serverProtocol) {
             Logger.warn("Client requested protocol " + clientProtocol + ", server only supports " + serverProtocol
-                    + " (" + Bedrock_v2193.CODEC.getMinecraftVersion() + "); continuing anyway since multi-version support isn't implemented yet.");
+                    + " (" + Bedrock_v2225.CODEC.getMinecraftVersion() + "); continuing anyway since multi-version support isn't implemented yet.");
         }
 
-        session.setCodec(Bedrock_v2193.CODEC);
+        session.setCodec(Bedrock_v2225.CODEC);
 
         NetworkSettingsPacket settings = new NetworkSettingsPacket();
         settings.setCompressionThreshold(512);
@@ -221,19 +217,25 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
             if (!result.signed()) {
                 Logger.warn("Player " + username + " is not signed into Xbox Live (offline/self-signed login).");
-            } else {
-                // Xbox Live-signed-in clients require the server to complete this Diffie-
-                // Hellman handshake before anything past login will work - if we skip it,
-                // the client starts expecting an encrypted stream that never comes, and
-                // just silently stalls (no error either side) rather than disconnecting.
-                // completeLogin() is deferred to handle(ClientToServerHandshakePacket) below
-                // rather than called right after this - waiting for the client's actual ack
-                // instead of assuming ordered delivery makes that safe. Flag is only set
-                // once the handshake packet actually sent without throwing - if it throws,
-                // we fall through to completeLogin() below same as an unsigned login, rather
-                // than leaving the connection stuck waiting for an ack that'll never come.
-                beginEncryptionHandshake(identityClaims);
-                awaitingHandshakeAck = true;
+            }
+
+            // NetherNet already validated a connecting client's identity at the transport
+            // level (the transport installs the binding when it accepts the connection) and
+            // recorded the key it proved it holds. This checks the Bedrock login chain's
+            // identity key against that one, so a client can't present a login chain for an
+            // identity it never actually proved it holds at the transport level.
+            //
+            // RakNet never needed this - it bound the login chain to the connection itself
+            // through Bedrock's own encryption handshake (ServerToClientHandshakePacket /
+            // ClientToServerHandshakePacket), which this project used to perform here. That
+            // handshake is gone along with RakNet: NetherNet's encryption (DTLS) lives below
+            // the Bedrock protocol entirely, so nothing else here would catch a mismatch.
+            String mismatch = TransportIdentityBinding.mismatch(
+                    session.getPeer().getChannel(), identityClaims.parsedIdentityPublicKey());
+            if (mismatch != null) {
+                Logger.warn("Disconnecting " + username + ": " + mismatch);
+                session.disconnect(mismatch);
+                return PacketSignal.HANDLED;
             }
         } catch (Exception e) {
             Logger.warn("Failed to validate the login chain, falling back to a random profile: " + e.getMessage());
@@ -246,9 +248,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             username = "Player" + ThreadLocalRandom.current().nextInt(1000, 9999);
         }
 
-        if (!awaitingHandshakeAck) {
-            completeLogin();
-        }
+        completeLogin();
         return PacketSignal.HANDLED;
     }
 
@@ -274,46 +274,6 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         }
     }
 
-    /**
-     * Performs the server side of Bedrock's Diffie-Hellman encryption handshake: generates
-     * a server EC key pair + random token, derives the shared AES secret using the client's
-     * identity public key (from the already-validated login chain), switches this session
-     * to encrypted from here on, then sends the client the handshake packet it needs to
-     * derive the same secret on its end. The @NoEncryption annotation on that packet class
-     * means it goes out in plaintext despite encryption already being enabled - everything
-     * sent after it won't be.
-     */
-    private void beginEncryptionHandshake(ChainValidationResult.IdentityClaims identityClaims) throws Exception {
-        Logger.info("Starting the encryption handshake for " + username + " (signed into Xbox Live)...");
-
-        KeyPair serverKeyPair = EncryptionUtils.createKeyPair();
-        byte[] token = EncryptionUtils.generateRandomToken();
-
-        // Order matters here: send the (plaintext, @NoEncryption) handshake packet BEFORE
-        // flipping encryption on, not after. This matches AllayMC's proven-working sequence
-        // rather than the reverse order used previously.
-        ServerToClientHandshakePacket handshake = new ServerToClientHandshakePacket();
-        handshake.setJwt(EncryptionUtils.createHandshakeJwt(serverKeyPair, token));
-        session.sendPacketImmediately(handshake);
-
-        SecretKey secretKey = EncryptionUtils.getSecretKey(
-                serverKeyPair.getPrivate(), identityClaims.parsedIdentityPublicKey(), token);
-        session.enableEncryption(secretKey);
-
-        Logger.info("Sent the encryption handshake packet to " + username + ", waiting for its response...");
-    }
-
-    @Override
-    public PacketSignal handle(ClientToServerHandshakePacket packet) {
-        // Acknowledges the client finished deriving its half of the shared secret and
-        // switched its own pipeline to decrypt from here on - this is what completeLogin()
-        // was waiting on, since sending encrypted packets before this arrives risks the
-        // client not being ready to decrypt them yet.
-        Logger.info("Player " + username + " acknowledged the encryption handshake.");
-        awaitingHandshakeAck = false;
-        completeLogin();
-        return PacketSignal.HANDLED;
-    }
 
     private void completeLogin() {
         // Players are saved by the UUID their login gives them, which stays the same for
@@ -371,7 +331,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         switch (packet.getStatus()) {
             case HAVE_ALL_PACKS -> {
                 ResourcePackStackPacket stack = new ResourcePackStackPacket();
-                stack.setGameVersion(Bedrock_v2193.CODEC.getMinecraftVersion());
+                stack.setGameVersion(Bedrock_v2225.CODEC.getMinecraftVersion());
                 session.sendPacket(stack);
             }
             case COMPLETED -> sendStartGame();
@@ -882,7 +842,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         startGame.setFromWorldTemplate(false);
         startGame.setWorldTemplateOptionLocked(false);
         startGame.setOnlySpawningV1Villagers(false);
-        startGame.setVanillaVersion(Bedrock_v2193.CODEC.getMinecraftVersion());
+        startGame.setVanillaVersion(Bedrock_v2225.CODEC.getMinecraftVersion());
         startGame.setLimitedWorldWidth(0);
         startGame.setLimitedWorldHeight(0);
         startGame.setNetherType(false);

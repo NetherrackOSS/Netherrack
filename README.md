@@ -94,7 +94,7 @@ The project started as a server-software simulation and is gradually being turne
 - [x] Console command handling
 - [x] Colored console logging
 - [x] Linux support/testing
-- [x] RakNet networking
+- [x] NetherNet networking
 - [x] Bedrock protocol integration
 - [x] Basic Bedrock login handling
 - [x] Initial block system
