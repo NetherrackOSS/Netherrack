@@ -33,7 +33,7 @@ import java.util.Map;
 /**
  * Vanilla data Netherrack needs to speak Bedrock's protocol correctly, sourced from
  * PMMP's BedrockData project (https://github.com/pmmp/BedrockData, CC0). The codec this
- * project targets is Bedrock_v2193 (1.26.50) - that has to match the real client's wire
+ * project targets is Bedrock_v2225 (1.26.60) - that has to match the real client's wire
  * protocol exactly, it's not a free choice. The bundled data below is NOT an exact match
  * for that version though, since BedrockData doesn't have a tag that far ahead yet:
  * <p>
@@ -48,7 +48,8 @@ import java.util.Map;
  * <p>
  * The item, creative inventory and data-driven block data is from Dragonfly instead
  * (https://github.com/df-mc/dragonfly, MIT - see data/LICENSE-dragonfly.txt), at commit
- * 4c7b5074be94, which targets 1.26.50 exactly. Converted from Dragonfly's
+ * 4c7b5074be94, which targeted 1.26.50 exactly at the time - now one step behind 1.26.60
+ * too, the same way the two files above are. Converted from Dragonfly's
  * vanilla_items.nbt, creative_items.nbt, block_states.nbt and data_driven_blocks.nbt into
  * the same single-compound network NBT form as the files above:
  * <p>
@@ -63,8 +64,9 @@ import java.util.Map;
  *   and concrete slabs and stairs, shelf mushrooms...). Behavior packs are the server's,
  *   so the client only knows these blocks if StartGame sends their definitions.
  * <p>
- * block_palette.nbt: every vanilla block state of 1.26.50 exactly, from CloudburstMC's Data
- * project (https://github.com/CloudburstMC/Data, commit 659ce1e2, Apache 2.0 - see
+ * block_palette.nbt: every vanilla block state of 1.26.50 exactly (now also one step behind
+ * 1.26.60), from CloudburstMC's Data project (https://github.com/CloudburstMC/Data,
+ * commit 659ce1e2, Apache 2.0 - see
  * data/LICENSE-CloudburstMC.txt), unchanged: gzipped big-endian NBT, {"blocks": [{name,
  * states, version, network_id...}]}. It's what says which states exist - a fence's
  * connections, stairs' corners - and each block's default state. StartGame's blockPalette

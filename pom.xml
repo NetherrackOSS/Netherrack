@@ -17,13 +17,23 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <!-- CloudburstMC libraries used for the RakNet transport + Bedrock protocol layer.
+        <!-- CloudburstMC libraries used for the NetherNet transport + Bedrock protocol layer.
              Credit: https://github.com/CloudburstMC/Network and https://github.com/CloudburstMC/Protocol
              Both are only published as snapshots right now (see the opencollab-snapshots
              repository below) — their git release tags don't correspond to published
-             Maven artifacts. -->
-        <cloudburst.network.version>1.0.0.CR3-SNAPSHOT</cloudburst.network.version>
-        <cloudburst.protocol.version>3.0.0.Beta13-SNAPSHOT</cloudburst.protocol.version>
+             Maven artifacts.
+
+             NETHERNET MIGRATION: as of Bedrock 1.26.60, Mojang removed RakNet entirely from
+             the client - every connection now goes over NetherNet (WebRTC: ICE + DTLS +
+             SCTP data channels), negotiated through an HTTP "signaling" exchange rather than
+             a raw UDP handshake. netty-transport-raknet is gone from this project; the
+             nethernet branch of Network (not yet merged to its main line, hence the 2.0.0.CRx
+             version - a different, newer line than the 1.0.0.CRx RakNet artifact it replaces)
+             stands in for it. That branch also needs a native WebRTC library
+             (libdatachannel-java), see the dependency below. -->
+        <cloudburst.network.version>2.0.0.CR6-SNAPSHOT</cloudburst.network.version>
+        <cloudburst.protocol.version>3.0.0.Beta15-SNAPSHOT</cloudburst.protocol.version>
+        <libdatachannel.version>0.24.6.0-20261029.091642-10</libdatachannel.version>
     </properties>
 
     <!-- CloudburstMC's own repository. Despite what the READMEs imply, the release artifacts
@@ -53,11 +63,19 @@
     </repositories>
 
     <dependencies>
-        <!-- RakNet transport (Netty-based). -->
+        <!-- NetherNet transport (Netty-based), replacing RakNet. -->
         <dependency>
             <groupId>org.cloudburstmc.netty</groupId>
-            <artifactId>netty-transport-raknet</artifactId>
+            <artifactId>netty-transport-nethernet</artifactId>
             <version>${cloudburst.network.version}</version>
+        </dependency>
+        <!-- NetherNet's native WebRTC backend (ICE/DTLS/SCTP). The "arch-detect" artifact
+             pulls in the right native binary for whatever platform this is built/run on,
+             rather than needing a separate dependency per OS/architecture. -->
+        <dependency>
+            <groupId>dev.opencollab</groupId>
+            <artifactId>libdatachannel-java-arch-detect</artifactId>
+            <version>${libdatachannel.version}</version>
         </dependency>
 
         <!-- Bedrock packet codec + connection handling. Snapshot-only for now. -->
@@ -201,6 +219,24 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
+                            <!-- Dependencies such as Bouncy Castle ship signed JAR metadata
+                                 (META-INF/*.SF, *.RSA). Once their classes are unpacked into
+                                 the shaded jar those signatures are invalid, and the JVM
+                                 refuses to launch the result with "Invalid signature file
+                                 digest for Manifest main attributes". The signature files
+                                 have to be removed when merging. -->
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>META-INF/*.EC</exclude>
+                                        <exclude>META-INF/SIG-*</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>com.netherrack.server.Netherrack</mainClass>

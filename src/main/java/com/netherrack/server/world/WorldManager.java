@@ -7,7 +7,7 @@ import com.netherrack.server.util.Logger;
 import com.netherrack.server.world.storage.WorldStorage;
 import org.cloudburstmc.nbt.NbtMap;
 import org.cloudburstmc.nbt.NbtType;
-import org.cloudburstmc.protocol.bedrock.codec.v2193.Bedrock_v2193;
+import org.cloudburstmc.protocol.bedrock.codec.v2225.Bedrock_v2225;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -112,10 +112,10 @@ public class WorldManager {
         return NbtMap.builder()
                 .putString("LevelName", levelName)
                 .putInt("StorageVersion", LevelDat.STORAGE_VERSION)
-                .putInt("NetworkVersion", Bedrock_v2193.CODEC.getProtocolVersion())
+                .putInt("NetworkVersion", Bedrock_v2225.CODEC.getProtocolVersion())
                 .putList("lastOpenedWithVersion", NbtType.INT, version)
                 .putList("MinimumCompatibleClientVersion", NbtType.INT, version)
-                .putString("InventoryVersion", Bedrock_v2193.CODEC.getMinecraftVersion())
+                .putString("InventoryVersion", Bedrock_v2225.CODEC.getMinecraftVersion())
                 .putInt("WorldVersion", 1) // made since 1.18: y -64 to 319
                 .putInt("GameType", 0) // survival
                 .putInt("Generator", flat != null ? 2 : 1) // flat or infinite
@@ -151,10 +151,10 @@ public class WorldManager {
         return top == null ? level : level.toBuilder().putInt("SpawnY", top + 1).build();
     }
 
-    /** The game version as level.dat lists it: e.g. 1.26.50 is [1, 26, 50, 0, 0]. */
+    /** The game version as level.dat lists it: e.g. 1.26.60 is [1, 26, 60, 0, 0]. */
     private static List<Integer> gameVersion() {
         List<Integer> version = new ArrayList<>();
-        for (String part : Bedrock_v2193.CODEC.getMinecraftVersion().split("\\.")) {
+        for (String part : Bedrock_v2225.CODEC.getMinecraftVersion().split("\\.")) {
             version.add(Integer.parseInt(part));
         }
         while (version.size() < 5) {
