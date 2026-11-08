@@ -19,6 +19,7 @@ import com.netherrack.server.player.Permissions;
 import com.netherrack.server.player.Player;
 import com.netherrack.server.player.PlayerData;
 import com.netherrack.server.player.PlayerManager;
+import com.netherrack.server.player.PlayerSurvival;
 import com.netherrack.server.setup.Lang;
 import com.netherrack.server.setup.SetupWizard;
 import com.netherrack.server.util.AnsiSupport;
@@ -365,6 +366,12 @@ public class Netherrack {
                 scheduler.tick();
                 tripwires.tick();
                 itemEntities.tick();
+                for (Player player : playerManager.getPlayers()) {
+                    PlayerSurvival survival = player.getSurvival();
+                    if (survival != null) {
+                        survival.tick(world);
+                    }
+                }
                 playerManager.updateVisibility();
                 playerManager.updateEquipment();
             } catch (Exception e) {

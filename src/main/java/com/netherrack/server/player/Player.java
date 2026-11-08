@@ -13,6 +13,7 @@ import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataTypes;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityFlag;
 import org.cloudburstmc.protocol.bedrock.data.skin.SerializedSkin;
 import org.cloudburstmc.protocol.bedrock.packet.SetPlayerGameTypePacket;
+import org.cloudburstmc.protocol.bedrock.packet.SetEntityDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.TextPacket;
 import org.cloudburstmc.protocol.bedrock.packet.UpdateAbilitiesPacket;
 
@@ -65,6 +66,7 @@ public class Player {
     private volatile GameType gameMode;
     private volatile Permission permission = Permission.MEMBER;
     private volatile int commandLevel;
+    private volatile PlayerSurvival survival;
 
     public Player(BedrockServerSession session, String username, UUID uuid, String xuid, long entityId,
                   SerializedSkin skin, String deviceId, BuildPlatform buildPlatform, Vector3f position,
@@ -122,6 +124,15 @@ public class Player {
         return inventory;
     }
 
+    /** This player's health, hunger and everything that wears them down. */
+    public PlayerSurvival getSurvival() {
+        return survival;
+    }
+
+    public void setSurvival(PlayerSurvival survival) {
+        this.survival = survival;
+    }
+
     public Vector3f getPosition() {
         return position;
     }
@@ -143,6 +154,7 @@ public class Player {
      * only when looked at.
      */
     public EntityDataMap createMetadata() {
+        PlayerSurvival survival = this.survival;
         EntityDataMap metadata = new EntityDataMap();
         metadata.setFlag(EntityFlag.BREATHING, true);
         metadata.setFlag(EntityFlag.HAS_GRAVITY, true);
@@ -151,14 +163,23 @@ public class Player {
         metadata.setFlag(EntityFlag.CAN_SHOW_NAME, true);
         metadata.setFlag(EntityFlag.ALWAYS_SHOW_NAME, true);
         metadata.setFlag(EntityFlag.SNEAKING, sneaking);
+        metadata.setFlag(EntityFlag.ON_FIRE, survival != null && survival.getFireTicks() > 0);
         metadata.put(EntityDataTypes.NAME, username);
         metadata.put(EntityDataTypes.NAMETAG_ALWAYS_SHOW, (byte) 1);
-        metadata.put(EntityDataTypes.AIR_SUPPLY, MAX_AIR_SUPPLY);
+        metadata.put(EntityDataTypes.AIR_SUPPLY, (short) (survival != null ? survival.getAir() : MAX_AIR_SUPPLY));
         metadata.put(EntityDataTypes.AIR_SUPPLY_MAX, MAX_AIR_SUPPLY);
         metadata.put(EntityDataTypes.SCALE, 1f);
         metadata.put(EntityDataTypes.WIDTH, 0.6f);
         metadata.put(EntityDataTypes.HEIGHT, 1.8f);
         return metadata;
+    }
+
+    /** Sends this player's client its own entity data again, after fire or air changed. */
+    public void sendMetadata() {
+        SetEntityDataPacket packet = new SetEntityDataPacket();
+        packet.setRuntimeEntityId(entityId);
+        packet.setMetadata(createMetadata());
+        session.sendPacket(packet);
     }
 
     public GameType getGameMode() {

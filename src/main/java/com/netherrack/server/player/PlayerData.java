@@ -30,7 +30,10 @@ import java.util.List;
  *   <li>Armor: helmet, chestplate, leggings, boots;</li>
  *   <li>Offhand: one item;</li>
  *   <li>PlayerUIItems: what was left on the inventory screen - the cursor (UI slot 0) and the
- *   crafting grid (28 to 31).</li>
+ *   crafting grid (28 to 31);</li>
+ *   <li>Attributes: health, hunger, saturation and exhaustion, each with its "Name", "Base",
+ *   "Current" and "Max", as vanilla keeps them;</li>
+ *   <li>Air and Fire: the air left, in ticks, and how long the player is still burning.</li>
  * </ul>
  * An item is {"Name", "Count", "Damage", "WasPickedUp"}, plus the "Block" a block item
  * places ({"name", "states", "version"}) and its "tag" (enchantments, a custom name...) if
@@ -57,6 +60,15 @@ public final class PlayerData {
             }
         }
 
+        PlayerSurvival survival = player.getSurvival();
+        // A player who saved while dead comes back alive: the death itself isn't saved.
+        float health = survival == null || survival.isDead() ? PlayerSurvival.MAX_HEALTH : survival.getHealth();
+        int food = survival != null ? survival.getFood() : PlayerSurvival.MAX_FOOD;
+        float saturation = survival != null ? survival.getSaturation() : PlayerSurvival.START_SATURATION;
+        float exhaustion = survival != null ? survival.getExhaustion() : 0;
+        int air = survival != null ? survival.getAir() : PlayerSurvival.MAX_AIR;
+        int fire = survival != null ? survival.getFireTicks() : 0;
+
         return NbtMap.builder()
                 .putString("identifier", "minecraft:player")
                 .putList("Pos", NbtType.FLOAT, List.of(position.getX(), position.getY(), position.getZ()))
@@ -68,6 +80,26 @@ public final class PlayerData {
                 .putList("Armor", NbtType.COMPOUND, slots(contents.armor()))
                 .putList("Offhand", NbtType.COMPOUND, slots(List.of(contents.offhand())))
                 .putList("PlayerUIItems", NbtType.COMPOUND, screen)
+                .putList("Attributes", NbtType.COMPOUND, attributes(health, food, saturation, exhaustion))
+                .putShort("Air", (short) air)
+                .putShort("Fire", (short) fire)
+                .build();
+    }
+
+    private static List<NbtMap> attributes(float health, int food, float saturation, float exhaustion) {
+        return List.of(
+                attribute("minecraft:health", PlayerSurvival.MAX_HEALTH, health, PlayerSurvival.MAX_HEALTH),
+                attribute("minecraft:player.hunger", PlayerSurvival.MAX_FOOD, food, PlayerSurvival.MAX_FOOD),
+                attribute("minecraft:player.saturation", PlayerSurvival.MAX_FOOD, saturation, PlayerSurvival.MAX_FOOD),
+                attribute("minecraft:player.exhaustion", 0, exhaustion, 5));
+    }
+
+    private static NbtMap attribute(String name, float base, float current, float max) {
+        return NbtMap.builder()
+                .putString("Name", name)
+                .putFloat("Base", base)
+                .putFloat("Current", current)
+                .putFloat("Max", max)
                 .build();
     }
 
@@ -81,7 +113,16 @@ public final class PlayerData {
      * @param selectedSlot the hotbar slot they had selected
      */
     public record Saved(Vector3f position, Vector3f rotation, GameType gameMode, int selectedSlot,
-                        PlayerInventory.Contents inventory) {
+                        PlayerInventory.Contents inventory, Stats stats) {
+    }
+
+    /** The survival numbers a returning player gets back. */
+    public record Stats(float health, int food, float saturation, float exhaustion, int air, int fireTicks) {
+
+        public static Stats defaults() {
+            return new Stats(PlayerSurvival.MAX_HEALTH, PlayerSurvival.MAX_FOOD,
+                    PlayerSurvival.START_SATURATION, 0, PlayerSurvival.MAX_AIR, 0);
+        }
     }
 
     public static Saved read(NbtMap data) {
@@ -130,7 +171,45 @@ public final class PlayerData {
 
         return new Saved(position, rotation, gameMode, data.getInt("SelectedInventorySlot", 0),
                 new PlayerInventory.Contents(List.of(main), armor,
-                        offhand.isEmpty() ? ItemData.AIR : item(offhand.get(0)), cursor, crafting));
+                        offhand.isEmpty() ? ItemData.AIR : item(offhand.get(0)), cursor, crafting),
+                stats(data));
+    }
+
+    /** Reads the health, hunger, air and fire a player was saved with. */
+    private static Stats stats(NbtMap data) {
+        Stats defaults = Stats.defaults();
+        float health = defaults.health();
+        int food = defaults.food();
+        float saturation = defaults.saturation();
+        float exhaustion = defaults.exhaustion();
+
+        for (NbtMap attribute : data.getList("Attributes", NbtType.COMPOUND, List.of())) {
+            String name = attribute.getString("Name", "");
+            float current = attribute.getFloat("Current", Float.NaN);
+            if (!Float.isFinite(current)) {
+                continue;
+            }
+            switch (name) {
+                case "minecraft:health" -> health = current;
+                case "minecraft:player.hunger" -> food = Math.round(current);
+                case "minecraft:player.saturation" -> saturation = current;
+                case "minecraft:player.exhaustion" -> exhaustion = current;
+                default -> {
+                }
+            }
+        }
+
+        if (health <= 0) {
+            health = PlayerSurvival.MAX_HEALTH; // died, then left before respawning
+        }
+        health = Math.max(0.01f, Math.min(health, PlayerSurvival.MAX_HEALTH));
+        food = Math.max(0, Math.min(food, PlayerSurvival.MAX_FOOD));
+        saturation = Math.max(0, Math.min(saturation, food));
+        exhaustion = Math.max(0, Math.min(exhaustion, 4));
+        int air = (data.getShort("Air", (short) PlayerSurvival.MAX_AIR)) & 0xFFFF;
+        int fire = (data.getShort("Fire", (short) 0)) & 0xFFFF;
+        return new Stats(health, food, saturation, exhaustion,
+                Math.min(air, PlayerSurvival.MAX_AIR), Math.min(fire, 1000));
     }
 
     private static List<NbtMap> slots(List<ItemData> items) {

@@ -32,6 +32,7 @@ import org.cloudburstmc.protocol.bedrock.packet.InventoryTransactionPacket;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Players breaking, placing and using blocks.
@@ -65,6 +66,16 @@ public class BlockInteraction {
 
     private static final int MIN_Y = -64;
     private static final int MAX_Y = 319;
+
+    /** Buckets that pour out a fluid, and the block each one places. */
+    private static final Map<String, String> FLUID_BUCKETS = Map.of(
+            "minecraft:water_bucket", "minecraft:water",
+            "minecraft:lava_bucket", "minecraft:lava");
+
+    /** Source fluids an empty bucket fills from, and the bucket it becomes. */
+    private static final Map<String, String> FILLED_BUCKETS = Map.of(
+            "minecraft:water", "minecraft:water_bucket",
+            "minecraft:lava", "minecraft:lava_bucket");
 
     /** Half a player's width, and their height standing - the box a solid placed block mustn't overlap. */
     private static final double PLAYER_HALF_WIDTH = 0.3;
@@ -148,6 +159,15 @@ public class BlockInteraction {
         }
 
         ItemData held = player.getInventory().get(slot);
+        String fluid = held.isNull() || held.getDefinition() == null ? null
+                : FLUID_BUCKETS.get(held.getDefinition().getIdentifier());
+        if (fluid != null) {
+            placeFluid(player, packet, slot, held, fluid, clicked, face);
+            return true;
+        }
+        if (!held.isNull() && isBucket(held) && fillBucket(player, packet, slot, held, clicked)) {
+            return true;
+        }
         if (!held.isNull() && VanillaData.get().placedBlock(held) == null) {
             return false;
         }
@@ -212,9 +232,111 @@ public class BlockInteraction {
         return true;
     }
 
+    /**
+     * Pours a bucket of water or lava where a block placed against the clicked face would
+     * go: into the clicked block if that's something a block can replace, or else into the
+     * space beyond the face. The bucket becomes empty, except in creative.
+     * <p>
+     * The fluid is a source block, as vanilla's bucket places, so it's kept in the chunk
+     * like any other block instead of being only what the client predicted.
+     */
+    private void placeFluid(Player player, InventoryTransactionPacket packet, int slot, ItemData held,
+                            String fluid, Vector3i clicked, Face face) {
+        String refusal = placementRefusal(player, packet, held, clicked);
+        List<BlockPlacement.Placed> placed = List.of();
+        if (refusal == null) {
+            Block source = Blocks.of(VanillaData.get().defaultBlockState(fluid));
+            float clickY = packet.getClickPosition() != null ? packet.getClickPosition().getY() : 0;
+            Placer placer = Placer.of(player.getPosition(), player.getRotation().getY(), player.isSneaking());
+            placed = BlockPlacement.plan(world, source, clicked, face, clickY, placer);
+            if (placed.isEmpty()) {
+                refusal = "the fluid doesn't fit there";
+            }
+        }
+        if (refusal != null) {
+            Logger.debug(player.getUsername() + " could not pour out " + fluid + " at " + clicked + ": " + refusal);
+            undo(player, slot, face.from(clicked), clicked);
+            return;
+        }
+
+        List<Vector3i> changed = new ArrayList<>();
+        for (BlockPlacement.Placed block : placed) {
+            Vector3i at = block.position();
+            world.setBlock(at.getX(), at.getY(), at.getZ(), block.block());
+            changed.add(at);
+        }
+        BlockBreaking.Changes settled = BlockBreaking.settle(world, changed);
+        changed.addAll(settled.reshaped());
+        for (BlockBreaking.Broken broken : settled.broken()) {
+            changed.add(broken.position());
+        }
+        for (Vector3i at : changed) {
+            players.broadcastBlock(at, blockAt(at));
+        }
+        showBroken(settled.broken(), null, player.isCreative(), null);
+        showSounds(settled.sounds());
+        updateLater(settled.later());
+
+        BlockPlacement.Placed first = placed.get(0);
+        SoundEvent sound = "minecraft:lava".equals(fluid)
+                ? SoundEvent.BUCKET_EMPTY_LAVA : SoundEvent.BUCKET_EMPTY_WATER;
+        players.broadcastSound(sound, center(first.position()), first.block());
+        if (!player.isCreative()) {
+            ItemData emptyBucket = VanillaData.get().item("minecraft:bucket", 1);
+            sendSlot(player, slot, player.getInventory().useOne(slot, emptyBucket));
+        }
+        // The client may have predicted its fluid somewhere else - or none, where the fluid
+        // went into a replaceable clicked block - so whatever didn't happen is put back.
+        for (Vector3i predicted : List.of(face.from(clicked), clicked)) {
+            if (!changed.contains(predicted)) {
+                player.getSession().sendPacket(PlayerManager.blockUpdate(predicted, blockAt(predicted)));
+            }
+        }
+    }
+
+    /** Whether an item is an empty bucket. */
+    private static boolean isBucket(ItemData item) {
+        return item.getDefinition() != null && "minecraft:bucket".equals(item.getDefinition().getIdentifier());
+    }
+
+    /**
+     * Fills an empty bucket from a water or lava source the player clicked: the source
+     * block goes away and the bucket becomes the filled one. Returns false when the clicked
+     * block isn't a source to fill from, leaving the click to whatever else the item does.
+     */
+    private boolean fillBucket(Player player, InventoryTransactionPacket packet, int slot, ItemData held,
+                               Vector3i clicked) {
+        Block clickedBlock = world.getBlock(clicked.getX(), clicked.getY(), clicked.getZ());
+        String filled = clickedBlock == null ? null : FILLED_BUCKETS.get(clickedBlock.getIdentifier());
+        if (filled == null || !isSource(clickedBlock)) {
+            return false;
+        }
+        boolean allowed = !player.isSpectator() && player.getPermission() != Permission.VISITOR
+                && packet.getItemInHand() != null && packet.getItemInHand().getDefinition() != null
+                && packet.getItemInHand().getDefinition().getRuntimeId() == held.getDefinition().getRuntimeId()
+                && withinReach(player, clicked);
+        if (!allowed) {
+            Logger.debug(player.getUsername() + " could not fill a bucket from " + clicked);
+            undo(player, slot, clicked);
+            return true;
+        }
+
+        world.setBlock(clicked.getX(), clicked.getY(), clicked.getZ(), Blocks.AIR);
+        players.broadcastBlock(clicked, Blocks.AIR);
+        SoundEvent sound = filled.equals("minecraft:water_bucket")
+                ? SoundEvent.BUCKET_FILL_WATER : SoundEvent.BUCKET_FILL_LAVA;
+        players.broadcastSound(sound, center(clicked), clickedBlock);
+        sendSlot(player, slot, player.getInventory().useOne(slot, VanillaData.get().item(filled, 1)));
+        return true;
+    }
+
+    /** Whether a block is a source of water or lava, rather than fluid that's still flowing. */
+    private static boolean isSource(Block block) {
+        return !(block.getProperty("liquid_depth") instanceof Number depth) || depth.intValue() == 0;
+    }
+
     /** A creative player's instant break, which their client reports as its own action. */
-    public void creativeBreak(Player player, Vector3i position) {
-        if (player.isCreative()) {
+    public void creativeBreak(Player player, Vector3i position) {        if (player.isCreative()) {
             breakBlock(player, position);
         }
     }
@@ -296,6 +418,9 @@ public class BlockInteraction {
 
         stopBreaking();
         BlockBreaking.Changes changes = BlockBreaking.breakBlock(world, position);
+        if (player.getSurvival() != null && !player.isCreative()) {
+            player.getSurvival().exhaust(0.005); // mining a block, as in vanilla
+        }
         for (BlockBreaking.Broken broken : changes.broken()) {
             players.broadcastBlock(broken.position(), Blocks.AIR);
         }

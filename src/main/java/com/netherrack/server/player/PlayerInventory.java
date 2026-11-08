@@ -109,6 +109,23 @@ public class PlayerInventory {
     }
 
     /**
+     * Uses up one item from a main inventory slot and puts what it turns into there, as a
+     * poured-out bucket leaves an empty bucket in its place. Returns what's in the slot now.
+     */
+    public synchronized ItemData useOne(int slot, ItemData becomes) {
+        main[slot] = removed(main[slot], 1);
+        if (!becomes.isNull()) {
+            if (main[slot].isNull()) {
+                main[slot] = withCount(becomes, 1, nextNetId++);
+            } else {
+                // The stack didn't empty; buckets stack to one, so this is only a safeguard.
+                add(becomes);
+            }
+        }
+        return main[slot];
+    }
+
+    /**
      * Adds as much of the item as fits into the main inventory, as picking it up does:
      * onto stacks of the same item first, then into empty slots, hotbar first. Returns how
      * many didn't fit.

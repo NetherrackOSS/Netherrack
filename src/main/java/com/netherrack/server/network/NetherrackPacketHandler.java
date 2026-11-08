@@ -11,6 +11,7 @@ import com.netherrack.server.player.Player;
 import com.netherrack.server.player.PlayerData;
 import com.netherrack.server.player.PlayerInventory;
 import com.netherrack.server.player.PlayerManager;
+import com.netherrack.server.player.PlayerSurvival;
 import com.netherrack.server.player.SkinParser;
 import com.netherrack.server.util.ColorCodes;
 import com.netherrack.server.util.Logger;
@@ -70,6 +71,7 @@ import org.cloudburstmc.protocol.bedrock.packet.ItemStackRequestPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ItemStackResponsePacket;
 import org.cloudburstmc.protocol.bedrock.packet.JigsawStructureDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.MobEquipmentPacket;
+import org.cloudburstmc.protocol.bedrock.packet.MovePlayerPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LevelSoundEventPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LoginPacket;
 import org.cloudburstmc.protocol.bedrock.packet.NetworkSettingsPacket;
@@ -79,10 +81,12 @@ import org.cloudburstmc.protocol.bedrock.packet.PlayStatusPacket;
 import org.cloudburstmc.protocol.bedrock.packet.PlayerHotbarPacket;
 import org.cloudburstmc.protocol.bedrock.packet.RequestChunkRadiusPacket;
 import org.cloudburstmc.protocol.bedrock.packet.RequestNetworkSettingsPacket;
+import org.cloudburstmc.protocol.bedrock.packet.RespawnPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ResourcePackClientResponsePacket;
 import org.cloudburstmc.protocol.bedrock.packet.ResourcePackStackPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ResourcePacksInfoPacket;
 import org.cloudburstmc.protocol.bedrock.packet.SetEntityDataPacket;
+import org.cloudburstmc.protocol.bedrock.packet.SetHealthPacket;
 import org.cloudburstmc.protocol.bedrock.packet.SetLocalPlayerAsInitializedPacket;
 import org.cloudburstmc.protocol.bedrock.packet.StartGamePacket;
 import org.cloudburstmc.protocol.bedrock.packet.TextPacket;
@@ -299,6 +303,13 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         GameType gameMode = saved != null && saved.gameMode() != null ? saved.gameMode() : netherrack.getDefaultGameMode();
         player = new Player(session, username, UUID.fromString(uuid), xuid, runtimeEntityId,
                 skin, deviceId, buildPlatform, spawnPosition, gameMode);
+        // Health, hunger and what wears them down. A returning player gets their saved
+        // numbers back; a new one starts full.
+        PlayerSurvival survival = new PlayerSurvival(player, players);
+        player.setSurvival(survival);
+        if (saved != null) {
+            survival.restore(saved.stats());
+        }
         // What else the player is shown depends on which chunks their client has.
         player.setChunkView(chunkView);
         if (saved != null) {
@@ -389,19 +400,25 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         entityData.setMetadata(player.createMetadata());
         session.sendPacket(entityData);
 
-        // Vanilla defaults for a new survival player: (name, min, max, value, default).
+        // Health, hunger, saturation and exhaustion as this player has them - the same
+        // numbers their survival state uses from here on.
+        PlayerSurvival survival = player.getSurvival();
+        SetHealthPacket health = new SetHealthPacket();
+        health.setHealth(survival.getHealthInt());
+        session.sendPacket(health);
+
         float noLimit = Float.MAX_VALUE;
         UpdateAttributesPacket attributes = new UpdateAttributesPacket();
         attributes.setRuntimeEntityId(runtimeEntityId);
         attributes.setAttributes(List.of(
-                new AttributeData("minecraft:health", 0, 20, 20, 20),
+                new AttributeData("minecraft:health", 0, PlayerSurvival.MAX_HEALTH, survival.getHealth(), PlayerSurvival.MAX_HEALTH),
                 new AttributeData("minecraft:absorption", 0, noLimit, 0, 0),
                 new AttributeData("minecraft:movement", 0, noLimit, 0.1f, 0.1f),
                 new AttributeData("minecraft:underwater_movement", 0, noLimit, 0.02f, 0.02f),
                 new AttributeData("minecraft:lava_movement", 0, noLimit, 0.02f, 0.02f),
-                new AttributeData("minecraft:player.hunger", 0, 20, 20, 20),
-                new AttributeData("minecraft:player.saturation", 0, 20, 5, 5),
-                new AttributeData("minecraft:player.exhaustion", 0, 5, 0, 0),
+                new AttributeData("minecraft:player.hunger", 0, PlayerSurvival.MAX_FOOD, survival.getFood(), PlayerSurvival.MAX_FOOD),
+                new AttributeData("minecraft:player.saturation", 0, PlayerSurvival.MAX_FOOD, survival.getSaturation(), PlayerSurvival.START_SATURATION),
+                new AttributeData("minecraft:player.exhaustion", 0, 5, survival.getExhaustion(), 0),
                 new AttributeData("minecraft:player.level", 0, 24791, 0, 0),
                 new AttributeData("minecraft:player.experience", 0, 1, 0, 0)));
         session.sendPacket(attributes);
@@ -449,6 +466,11 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         if (player == null) {
             return PacketSignal.HANDLED;
         }
+        PlayerSurvival survival = player.getSurvival();
+        if (survival != null && survival.isDead()) {
+            // Dead players stay where they fell until they answer the respawn handshake.
+            return PacketSignal.HANDLED;
+        }
 
         // Checked before the "standing still" shortcut below, since players can break
         // blocks and start or stop sneaking without moving.
@@ -465,14 +487,19 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
         Vector3f position = packet.getPosition();
         Vector3f rotation = packet.getRotation();
+        boolean onGround = packet.getInputData().contains(PlayerAuthInputData.VERTICAL_COLLISION)
+                && packet.getDelta().getY() <= 0;
+        // Falls, landings and the hunger cost of moving are measured from what the client
+        // reports - before the standing-still shortcut, so landing still hurts.
+        if (survival != null) {
+            survival.moved(world, player.getPosition(), position, onGround, packet.getInputData());
+        }
         if (position.equals(player.getPosition()) && rotation.equals(player.getRotation())) {
             return PacketSignal.HANDLED; // standing still - nothing new to tell anyone
         }
 
         player.setLocation(position, rotation);
         chunkView.moveTo(position);
-        boolean onGround = packet.getInputData().contains(PlayerAuthInputData.VERTICAL_COLLISION)
-                && packet.getDelta().getY() <= 0;
         players.broadcastMovement(player, onGround, packet.getTick());
 
         return PacketSignal.HANDLED;
@@ -487,6 +514,10 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
     public PacketSignal handle(AnimatePacket packet) {
         if (player != null && packet.getAction() == AnimatePacket.Action.SWING_ARM) {
             players.broadcastSwing(player, packet.getSwingSource());
+            PlayerSurvival survival = player.getSurvival();
+            if (survival != null) {
+                survival.swung();
+            }
         }
         return PacketSignal.HANDLED;
     }
@@ -736,6 +767,56 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         if (player != null && packet.getAction() == PlayerActionType.DIMENSION_CHANGE_REQUEST_OR_CREATIVE_DESTROY_BLOCK) {
             blockInteraction.creativeBreak(player, packet.getBlockPosition());
         }
+        return PacketSignal.HANDLED;
+    }
+
+    /**
+     * The client's answer to the death screen: it's ready to come back. The server finishes
+     * vanilla's respawn handshake - a searching packet and then a ready one - and puts the
+     * player at the world spawn with full health and hunger.
+     */
+    @Override
+    public PacketSignal handle(RespawnPacket packet) {
+        if (player == null || packet.getState() != RespawnPacket.State.CLIENT_READY) {
+            return PacketSignal.HANDLED;
+        }
+        PlayerSurvival survival = player.getSurvival();
+        if (survival == null || !survival.isDead()) {
+            return PacketSignal.HANDLED;
+        }
+
+        Vector3i spawn = world.getSpawn();
+        Vector3f respawn = Vector3f.from(spawn.getX() + 0.5, spawn.getY() + Player.EYE_HEIGHT,
+                spawn.getZ() + 0.5);
+
+        RespawnPacket searching = new RespawnPacket();
+        searching.setPosition(Vector3f.from(respawn.getX(), 32767, respawn.getZ()));
+        searching.setState(RespawnPacket.State.SERVER_SEARCHING);
+        searching.setRuntimeEntityId(0);
+        session.sendPacket(searching);
+
+        RespawnPacket ready = new RespawnPacket();
+        ready.setPosition(respawn);
+        ready.setState(RespawnPacket.State.SERVER_READY);
+        ready.setRuntimeEntityId(0);
+        session.sendPacket(ready);
+
+        survival.respawn();
+        player.setLocation(respawn, player.getRotation());
+        chunkView.moveTo(respawn);
+
+        MovePlayerPacket teleport = new MovePlayerPacket();
+        teleport.setRuntimeEntityId(runtimeEntityId);
+        teleport.setPosition(respawn);
+        teleport.setRotation(player.getRotation());
+        teleport.setMode(MovePlayerPacket.Mode.TELEPORT);
+        teleport.setTeleportationCause(MovePlayerPacket.TeleportationCause.UNKNOWN);
+        teleport.setOnGround(true);
+        teleport.setTick(0);
+        session.sendPacket(teleport);
+
+        sendInventory();
+        players.broadcastMovement(player, true, 0);
         return PacketSignal.HANDLED;
     }
 

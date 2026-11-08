@@ -12,12 +12,14 @@ import org.cloudburstmc.protocol.bedrock.data.GameType;
 import org.cloudburstmc.protocol.bedrock.data.LevelEvent;
 import org.cloudburstmc.protocol.bedrock.data.SoundEvent;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandPermission;
+import org.cloudburstmc.protocol.bedrock.data.entity.EntityEventType;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerId;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
 import org.cloudburstmc.protocol.bedrock.packet.AddPlayerPacket;
 import org.cloudburstmc.protocol.bedrock.packet.AnimatePacket;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
 import org.cloudburstmc.protocol.bedrock.packet.BlockEntityDataPacket;
+import org.cloudburstmc.protocol.bedrock.packet.EntityEventPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LevelEventPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LevelSoundEventPacket;
 import org.cloudburstmc.protocol.bedrock.packet.MobArmorEquipmentPacket;
@@ -324,6 +326,24 @@ public class PlayerManager {
         animate.setAction(AnimatePacket.Action.SWING_ARM);
         animate.setSwingSource(source != null ? source : AnimatePacket.SwingSource.NONE);
         broadcastSeen(swinger, animate);
+    }
+
+    /** Shows everyone else the player being hurt. */
+    public void broadcastHurt(Player player) {
+        broadcastSeen(player, entityEvent(player, EntityEventType.HURT));
+    }
+
+    /** Shows everyone else the player dying. */
+    public void broadcastDeath(Player player) {
+        broadcastSeen(player, entityEvent(player, EntityEventType.DEATH));
+    }
+
+    private static EntityEventPacket entityEvent(Player player, EntityEventType type) {
+        EntityEventPacket event = new EntityEventPacket();
+        event.setRuntimeEntityId(player.getEntityId());
+        event.setType(type);
+        event.setData(0);
+        return event;
     }
 
     /** Sends a packet to every player in the world. */
