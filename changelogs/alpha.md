@@ -24,9 +24,21 @@
 
 This list is not exhaustive. Additional bugs and limitations may be discovered during testing.
 
-## Alpha Notice
+# v0.2.0-alpha (unreleased)
+### Added
+- **NetherNet Networking:** Support for NetherNet. The server now generates a ``nethernet-identity.pem`` file on startup.
 
-**Netherrack v0.1.0-alpha is experimental software.**
+- **Survival Statistics:** Statistics such as health, hunger, and many more have all been added.
+
+### Removed
+- **RakNet Networking:** Starting Bedrock v1.26.60, Mojang has completely removed RakNet from the game, replacing it with NetherNet.
+
+### Fixed
+- **Liquids such as water and lava not saving:** This bug that has been known since v0.1.0-alpha has now been fixed.
+
+## ⚠️ Alpha Notice
+
+**Netherrack is experimental software.**
 
 This release is intended for early testing, experimentation, and feedback. Features may be incomplete, behavior may change between releases, and unexpected crashes or data loss may occur.
 Do not use this release for production servers or worlds containing important data without maintaining independent backups.
