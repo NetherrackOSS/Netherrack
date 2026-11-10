@@ -8,6 +8,7 @@ import org.cloudburstmc.protocol.bedrock.data.inventory.FullContainerName;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequest;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequestSlotData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.ConsumeAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.CraftCreativeAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.DestroyAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.DropAction;
@@ -96,6 +97,7 @@ public class PlayerInventory {
     private int nextNetId = 1;
     private final Deque<Recent> recent = new ArrayDeque<>();
     private final List<ItemData> dropped = new ArrayList<>();
+    private final List<ItemData> consumed = new ArrayList<>();
 
     /** The item in a main inventory slot. */
     public synchronized ItemData get(int slot) {
@@ -106,6 +108,12 @@ public class PlayerInventory {
     public synchronized ItemData useOne(int slot) {
         main[slot] = removed(main[slot], 1);
         return main[slot];
+    }
+
+    /** Uses up one item from the offhand (e.g. food eaten from it) and returns what's left. */
+    public synchronized ItemData useOneOffhand() {
+        offhand = removed(offhand, 1);
+        return offhand;
     }
 
     /**
@@ -174,6 +182,16 @@ public class PlayerInventory {
     }
 
     /**
+     * The items eaten or drunk since the last call, for the player's stats to apply. The
+     * stacks are gone from the inventory already; this is what they were.
+     */
+    public synchronized List<ItemData> takeConsumed() {
+        List<ItemData> taken = List.copyOf(consumed);
+        consumed.clear();
+        return taken;
+    }
+
+    /**
      * Applies an item stack request if it's valid, and returns the response to send: what
      * the touched slots now hold, or an error that makes the client undo the request.
      * {@code creative} allows taking items from the creative inventory and destroying them.
@@ -183,9 +201,10 @@ public class PlayerInventory {
         Snapshot before = new Snapshot();
         List<Change> changes = new ArrayList<>();
         List<ItemStackRequestSlotData> touched = new ArrayList<>();
+        List<ItemData> consumedNow = new ArrayList<>();
         try {
             for (ItemStackRequestAction action : request.getActions()) {
-                apply(action, requestId, creative, changes, touched);
+                apply(action, requestId, creative, changes, touched, consumedNow);
             }
             checkArmor();
         } catch (Refused refused) {
@@ -197,6 +216,7 @@ public class PlayerInventory {
 
         // Whatever's left of a creative item that wasn't put anywhere is gone once the request ends.
         created = ItemData.AIR;
+        consumed.addAll(consumedNow);
         remember(requestId, changes);
         return new ItemStackResponse(ItemStackResponseStatus.OK, requestId, describe(touched));
     }
@@ -356,7 +376,7 @@ public class PlayerInventory {
     }
 
     private void apply(ItemStackRequestAction action, int requestId, boolean creative, List<Change> changes,
-                       List<ItemStackRequestSlotData> touched) throws Refused {
+                       List<ItemStackRequestSlotData> touched, List<ItemData> consumedNow) throws Refused {
         if (action instanceof TransferItemStackRequestAction transfer) {
             // Take and Place: moving some or all of a stack, onto nothing or onto the same item.
             transfer(transfer.getCount(), transfer.getSource(), transfer.getDestination(), requestId, changes);
@@ -407,6 +427,27 @@ public class PlayerInventory {
             set(from, removed(item, drop.getCount()));
             note(changes, from);
             touch(touched, drop.getSource());
+        } else if (action instanceof ConsumeAction consume) {
+            Place from = checked(consume.getSource(), requestId, changes);
+            ItemData item = get(from);
+            if (from.kind() != Kind.CRAFTING && (item.isNull() || Foods.of(item) != null)) {
+                // Eating food is driven and counted by the server tick (PlayerSurvival),
+                // so this is just the client confirming what it predicted. Answer with the
+                // slot as the server has it (possibly now empty) rather than taking a
+                // second item.
+                note(changes, from);
+                touch(touched, consume.getSource());
+            } else {
+                // A crafting ingredient: the client says how many of the stack it used up.
+                if (item.isNull() || consume.getCount() < 1 || consume.getCount() > item.getCount()) {
+                    throw new Refused("can't consume " + consume.getCount()
+                            + " from a stack of " + item.getCount());
+                }
+                consumedNow.add(item.toBuilder().count(consume.getCount()).build());
+                set(from, removed(item, consume.getCount()));
+                note(changes, from);
+                touch(touched, consume.getSource());
+            }
         } else {
             switch (action.getType()) {
                 // Informational only: what the client expects a craft to make, and a tool's

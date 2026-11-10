@@ -6,6 +6,7 @@ import com.netherrack.server.command.AvailableCommands;
 import com.netherrack.server.command.PlayerCommandSender;
 import com.netherrack.server.entity.EntityIds;
 import com.netherrack.server.entity.ItemEntities;
+import com.netherrack.server.player.Foods;
 import com.netherrack.server.player.Permission;
 import com.netherrack.server.player.Player;
 import com.netherrack.server.player.PlayerData;
@@ -37,9 +38,11 @@ import org.cloudburstmc.protocol.bedrock.data.command.CommandOriginData;
 import org.cloudburstmc.protocol.bedrock.data.PlayerAuthInputData;
 import org.cloudburstmc.protocol.bedrock.data.SpawnBiomeType;
 import org.cloudburstmc.protocol.bedrock.data.editor.WorldType;
+import org.cloudburstmc.protocol.bedrock.data.entity.EntityEventType;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerId;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerSlotType;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerType;
+import org.cloudburstmc.protocol.bedrock.data.inventory.HandSlot;
 import org.cloudburstmc.protocol.bedrock.data.inventory.FullContainerName;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequest;
@@ -66,6 +69,7 @@ import org.cloudburstmc.protocol.bedrock.packet.ContainerClosePacket;
 import org.cloudburstmc.protocol.bedrock.packet.ContainerOpenPacket;
 import org.cloudburstmc.protocol.bedrock.packet.InteractPacket;
 import org.cloudburstmc.protocol.bedrock.packet.InventoryTransactionPacket;
+import org.cloudburstmc.protocol.bedrock.packet.EntityEventPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ItemComponentPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ItemStackRequestPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ItemStackResponsePacket;
@@ -615,11 +619,14 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             return PacketSignal.HANDLED;
         }
         PlayerInventory inventory = player.getInventory();
+        PlayerSurvival survival = player.getSurvival();
         List<ItemData> armorBefore = inventory.getArmor();
         boolean changedInventory = false;
 
         if (packet.getTransactionType() == InventoryTransactionType.ITEM_USE
                 && (packet.getActionType() == 0 || packet.getActionType() == 1)) {
+            int slot = packet.getHotbarSlot();
+            boolean validSlot = slot >= 0 && slot < PlayerInventory.HOTBAR_SIZE;
             int heldId = packet.getItemInHand() != null && packet.getItemInHand().getDefinition() != null
                     ? packet.getItemInHand().getDefinition().getRuntimeId() : 0;
             // On a block, a block item - a carved pumpkin or a head too - is placed, and a
@@ -627,8 +634,27 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             // the client found that works too.
             boolean onBlockDone = packet.getActionType() == 0 && blockInteraction.handleItemUse(player, packet);
             boolean predictedToWork = packet.getClientInteractPrediction() != ItemUseTransaction.PredictedResult.FAILURE;
-            if (!onBlockDone && predictedToWork && inventory.equipHeld(packet.getHotbarSlot(), heldId)) {
-                changedInventory = true;
+            if (!onBlockDone && predictedToWork) {
+                boolean offhand = packet.getHand() == HandSlot.OFFHAND;
+                boolean eating = false;
+                // Using food on air starts eating; the server tick finishes it after 1.6s
+                // and takes the item then, as vanilla does.
+                if (packet.getActionType() == 1 && survival != null) {
+                    ItemData held = offhand ? inventory.getOffhand()
+                            : validSlot ? inventory.get(slot) : ItemData.AIR;
+                    if (Foods.of(held) != null) {
+                        survival.useItem(held, offhand ? -1 : slot, offhand);
+                        eating = true;
+                    }
+                }
+                if (!eating && !offhand && validSlot && inventory.equipHeld(slot, heldId)) {
+                    changedInventory = true;
+                }
+            }
+        } else if (packet.getTransactionType() == InventoryTransactionType.ITEM_RELEASE) {
+            // Letting go early stops the meal; nothing has been taken out of the inventory.
+            if (survival != null) {
+                survival.releaseItem();
             }
         } else if (packet.getTransactionType() == InventoryTransactionType.NORMAL) {
             throwFromHotbar(packet.getActions());
@@ -817,6 +843,29 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
         sendInventory();
         players.broadcastMovement(player, true, 0);
+        return PacketSignal.HANDLED;
+    }
+
+    /**
+     * The client's eating animation, which carries the crunch sound. It isn't shown to
+     * anyone automatically, so it's validated and echoed to the player and everyone who
+     * can see them - that is what makes eating audible.
+     */
+    @Override
+    public PacketSignal handle(EntityEventPacket packet) {
+        if (player == null || packet.getType() != EntityEventType.EATING_ITEM
+                || packet.getRuntimeEntityId() != player.getEntityId()) {
+            return PacketSignal.HANDLED;
+        }
+        PlayerInventory inventory = player.getInventory();
+        boolean food = Foods.of(inventory.get(player.getSelectedSlot())) != null
+                || Foods.of(inventory.getOffhand()) != null;
+        PlayerSurvival survival = player.getSurvival();
+        if (!food && (survival == null || !survival.isUsingItem())) {
+            return PacketSignal.HANDLED;
+        }
+        packet.setRuntimeEntityId(player.getEntityId());
+        players.broadcastAt(player.getPosition(), packet);
         return PacketSignal.HANDLED;
     }
 

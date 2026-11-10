@@ -5,9 +5,12 @@ import com.netherrack.server.command.CommandManager;
 import com.netherrack.server.command.ConsoleCommandSender;
 import com.netherrack.server.command.DeopCommand;
 import com.netherrack.server.command.GamemodeCommand;
+import com.netherrack.server.command.GiveCommand;
 import com.netherrack.server.command.HelpCommand;
+import com.netherrack.server.command.KillCommand;
 import com.netherrack.server.command.OpCommand;
 import com.netherrack.server.command.StopCommand;
+import com.netherrack.server.command.TpCommand;
 import com.netherrack.server.command.VersionCommand;
 import com.netherrack.server.entity.ItemEntities;
 import com.netherrack.server.network.ChunkViews;
@@ -79,6 +82,9 @@ public class Netherrack {
         commandManager.register(new GamemodeCommand());
         commandManager.register(new OpCommand());
         commandManager.register(new DeopCommand());
+        commandManager.register(new KillCommand());
+        commandManager.register(new TpCommand());
+        commandManager.register(new GiveCommand());
     }
 
     public ServerConfig getConfig() {

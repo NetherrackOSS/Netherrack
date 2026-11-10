@@ -7,9 +7,15 @@ import com.netherrack.server.world.World;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.protocol.bedrock.data.AttributeData;
 import org.cloudburstmc.protocol.bedrock.data.PlayerAuthInputData;
+import org.cloudburstmc.protocol.bedrock.data.SoundEvent;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityEventType;
+import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerId;
+import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.ItemUseType;
+import org.cloudburstmc.protocol.bedrock.packet.CompletedUsingItemPacket;
 import org.cloudburstmc.protocol.bedrock.packet.DeathInfoPacket;
 import org.cloudburstmc.protocol.bedrock.packet.EntityEventPacket;
+import org.cloudburstmc.protocol.bedrock.packet.InventorySlotPacket;
 import org.cloudburstmc.protocol.bedrock.packet.RespawnPacket;
 import org.cloudburstmc.protocol.bedrock.packet.SetHealthPacket;
 import org.cloudburstmc.protocol.bedrock.packet.TextPacket;
@@ -68,6 +74,9 @@ public final class PlayerSurvival {
     /** A single movement larger than this is a teleport, not a step or a fall. */
     private static final double MAX_STEP = 10;
 
+    /** How long eating an item takes, as vanilla does: 1.6 seconds for most foods. */
+    private static final int EAT_DURATION_TICKS = 32;
+
     private final Player player;
     /** For showing other players the hurt and death animations; null in tests. */
     private final PlayerManager players;
@@ -91,6 +100,12 @@ public final class PlayerSurvival {
     private int voidTimer;
     private boolean inWater;
     private boolean inLava;
+    private boolean usingItem;
+    /** What is being eaten, from which slot, and for how many ticks. */
+    private String usingItemId;
+    private int usingSlot = -1;
+    private boolean usingOffhand;
+    private int useTicks;
     private int airSinceSent = MAX_AIR;
     private boolean fireWasSent;
     private int statsSinceSent;
@@ -148,6 +163,11 @@ public final class PlayerSurvival {
         return inLava;
     }
 
+    /** Whether the player is holding down a food item, partway through eating it. */
+    public boolean isUsingItem() {
+        return usingItem;
+    }
+
     /** Puts back what {@link PlayerData} saved for a returning player. */
     public synchronized void restore(PlayerData.Stats stats) {
         health = clamp(stats.health(), 0.01f, MAX_HEALTH);
@@ -158,6 +178,7 @@ public final class PlayerSurvival {
         fireTicks = Math.max(0, Math.min(stats.fireTicks(), 1000));
         dead = false;
         fallDistance = 0;
+        usingItem = false;
         airSinceSent = air;
         fireWasSent = fireTicks > 0;
     }
@@ -207,6 +228,7 @@ public final class PlayerSurvival {
         if (dead) {
             return;
         }
+        tickUsingItem();
         if (player.isCreative() || player.isSpectator()) {
             // Creative players neither burn nor hunger; leave their stats as they are.
             if (fireTicks != 0) {
@@ -224,6 +246,7 @@ public final class PlayerSurvival {
         Block eyeBlock = blockAt(world, eyes);
         Block belowBlock = blockAt(world, Vector3f.from(feet.getX(), feet.getY() - 0.1f, feet.getZ()));
 
+        boolean wasInLava = inLava;
         inWater = isWater(feetBlock) || isWater(eyeBlock);
         inLava = isLava(feetBlock) || isLava(eyeBlock);
 
@@ -232,13 +255,19 @@ public final class PlayerSurvival {
             drowningTimer = 0;
             fireTicks = Math.max(fireTicks, 300);
             fallDistance = 0;
-            if (++lavaTimer >= LAVA_INTERVAL) {
+            // The first tick in lava burns at once; after that every LAVA_INTERVAL ticks.
+            if (!wasInLava || ++lavaTimer >= LAVA_INTERVAL) {
                 lavaTimer = 0;
                 damage(LAVA_DAMAGE, DamageCause.LAVA);
             }
         } else {
             lavaTimer = 0;
             if (inWater) {
+                // Putting out a fire hisses, as vanilla does; the client can't know we
+                // cleared it before it hears about the fire going away.
+                if (fireTicks > 0 && players != null) {
+                    players.broadcastEntitySound(player, SoundEvent.EXTINGUISH_FIRE);
+                }
                 fireTicks = 0;
                 fallDistance = 0;
                 // Only a head under water runs out of air; standing in it is fine.
@@ -379,6 +408,11 @@ public final class PlayerSurvival {
         }
     }
 
+    /** Notes that the server moved the player, so a teleport isn't mistaken for a fall. */
+    public synchronized void teleported() {
+        fallDistance = 0;
+    }
+
     /** Adds exhaustion, which first eats saturation and then hunger once saturation is gone. */
     public synchronized void exhaust(double amount) {
         if (dead || amount <= 0 || player.isCreative() || player.isSpectator()) {
@@ -407,7 +441,7 @@ public final class PlayerSurvival {
         }
         health = Math.max(0, health - amount);
         exhaust(0.1); // being hurt is exhausting, as in vanilla
-        playHurt();
+        playHurt(cause);
         if (health <= 0) {
             die(cause);
         } else {
@@ -427,6 +461,132 @@ public final class PlayerSurvival {
         }
     }
 
+    /**
+     * Eats one serving of a food item: restores hunger and the saturation that comes with
+     * it, capped at full, and burps. The item itself comes out of the inventory in
+     * {@link #useItem}. Returns whether the player could eat it at all.
+     */
+    public synchronized boolean eat(ItemData item) {
+        Foods.Food eaten = Foods.of(item);
+        if (dead || eaten == null) {
+            return false;
+        }
+        if (food >= MAX_FOOD && !Foods.alwaysEdible(item) && !player.isCreative()) {
+            return false; // too full to eat, though the client usually won't ask
+        }
+        if (food < MAX_FOOD) {
+            food = Math.min(MAX_FOOD, food + eaten.nutrition());
+            saturation = Math.min(food, saturation + eaten.nutrition() * eaten.saturationModifier() * 2f);
+            sendAttributes();
+        }
+        if (players != null) {
+            players.broadcastEntitySound(player, SoundEvent.BURP);
+        }
+        return true;
+    }
+
+    /**
+     * The player using what they hold on air: this starts eating. Finishing is driven by
+     * the server tick (see {@link #tickUsingItem}), as vanilla does, so it doesn't depend
+     * on the client sending more use packets. Returns whether something was eaten right
+     * away, which it never is - the caller has nothing to take out of the inventory yet.
+     */
+    public synchronized boolean useItem(ItemData item) {
+        return useItem(item, player.getSelectedSlot(), false);
+    }
+
+    /**
+     * Starts eating the item held in the given hotbar slot, or the offhand. Called from
+     * every click-air the client sends while holding the button down; only the first one
+     * starts the meal, the rest leave it running.
+     */
+    public synchronized boolean useItem(ItemData item, int slot, boolean offhand) {
+        if (dead || player.isSpectator() || Foods.of(item) == null) {
+            usingItem = false;
+            return false;
+        }
+        if (food >= MAX_FOOD && !Foods.alwaysEdible(item) && !player.isCreative()) {
+            usingItem = false;
+            return false;
+        }
+        String id = item.getDefinition() == null ? null : item.getDefinition().getIdentifier();
+        if (usingItem && id != null && id.equals(usingItemId)
+                && offhand == usingOffhand && (offhand || slot == usingSlot)) {
+            return false; // the same meal, still going
+        }
+        usingItem = true;
+        usingItemId = id;
+        usingSlot = slot;
+        usingOffhand = offhand;
+        useTicks = 0;
+        return false;
+    }
+
+    /** The player let go before finishing what they were eating. */
+    public synchronized void releaseItem() {
+        usingItem = false;
+    }
+
+    /**
+     * Advances a meal by one tick, finishing it after {@link #EAT_DURATION_TICKS}: the food
+     * is applied, one is taken out of the slot it came from, and the client is told both
+     * that the use completed and what the slot holds now.
+     */
+    private void tickUsingItem() {
+        if (!usingItem) {
+            return;
+        }
+        PlayerInventory inventory = player.getInventory();
+        if (!usingOffhand && player.getSelectedSlot() != usingSlot) {
+            usingItem = false; // switched away before finishing
+            return;
+        }
+        ItemData held = usingOffhand ? inventory.getOffhand()
+                : usingSlot >= 0 && usingSlot < PlayerInventory.HOTBAR_SIZE
+                        ? inventory.get(usingSlot) : ItemData.AIR;
+        if (held.isNull() || held.getDefinition() == null
+                || !held.getDefinition().getIdentifier().equals(usingItemId)) {
+            usingItem = false; // it's gone, or a different item is in the slot now
+            return;
+        }
+        if (++useTicks < EAT_DURATION_TICKS) {
+            return;
+        }
+        usingItem = false;
+        if (!eat(held)) {
+            return; // too full after all
+        }
+        if (!player.isCreative()) {
+            ItemData left = usingOffhand ? inventory.useOneOffhand() : inventory.useOne(usingSlot);
+            sendSlot(left);
+        }
+        CompletedUsingItemPacket completed = new CompletedUsingItemPacket();
+        completed.setItemId(held.getDefinition().getRuntimeId());
+        completed.setType(ItemUseType.EAT);
+        player.getSession().sendPacket(completed);
+    }
+
+    /** Tells this client what one of its inventory slots holds after the meal took an item. */
+    private void sendSlot(ItemData item) {
+        InventorySlotPacket packet = new InventorySlotPacket();
+        packet.setContainerId(usingOffhand ? ContainerId.OFFHAND : ContainerId.INVENTORY);
+        packet.setSlot(usingOffhand ? 0 : usingSlot);
+        packet.setItem(item);
+        player.getSession().sendPacket(packet);
+    }
+
+    /**
+     * Kills the player outright, as /kill does. Unlike {@link #damage}, this ignores the
+     * invulnerability of creative and spectator players: the command kills them too.
+     */
+    public synchronized void kill(DamageCause cause) {
+        if (dead) {
+            return;
+        }
+        health = 0;
+        die(cause);
+    }
+
     /** Dies: tells the client, and starts the respawn handshake once it says it's ready. */
     private synchronized void die(DamageCause cause) {
         if (dead) {
@@ -439,6 +599,7 @@ public final class PlayerSurvival {
         fallDistance = 0;
         inWater = false;
         inLava = false;
+        usingItem = false;
         resetTimers();
         playDeath();
         sendStats();
@@ -493,17 +654,26 @@ public final class PlayerSurvival {
         fallDistance = 0;
         inWater = false;
         inLava = false;
+        usingItem = false;
         resetTimers();
         airSinceSent = air;
         fireWasSent = false;
         sendStats();
     }
 
-    private void playHurt() {
+    private void playHurt(DamageCause cause) {
         EntityEventPacket hurt = event(EntityEventType.HURT);
         player.getSession().sendPacket(hurt);
         if (players != null) {
             players.broadcastHurt(player);
+            // The entity event plays the ordinary hurt sound; the client can't tell what
+            // hurt them, so causes with a voice of their own get a sound of their own.
+            switch (cause) {
+                case LAVA, FIRE -> players.broadcastEntitySound(player, SoundEvent.PLAYER_HURT_ON_FIRE);
+                case DROWNING -> players.broadcastEntitySound(player, SoundEvent.PLAYER_HURT_DROWN);
+                default -> {
+                }
+            }
         }
     }
 

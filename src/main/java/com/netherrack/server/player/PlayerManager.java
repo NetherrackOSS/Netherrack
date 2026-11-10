@@ -1,6 +1,7 @@
 package com.netherrack.server.player;
 
 import com.netherrack.server.block.Block;
+import com.netherrack.server.network.ChunkView;
 import com.netherrack.server.network.HashedBlockDefinitions;
 import com.netherrack.server.setup.Lang;
 import com.netherrack.server.util.ColorCodes;
@@ -192,6 +193,33 @@ public class PlayerManager {
         broadcastSeen(mover, move);
     }
 
+    /**
+     * Moves a player somewhere else at once, as /tp and respawning do: the client is told
+     * to teleport (it won't follow a plain server-side position change), their chunk view
+     * follows them, and everyone who can see them is told where they went.
+     */
+    public void teleport(Player player, Vector3f position) {
+        player.setLocation(position, player.getRotation());
+        ChunkView view = player.getChunkView();
+        if (view != null) {
+            view.moveTo(position);
+        }
+        if (player.getSurvival() != null) {
+            player.getSurvival().teleported();
+        }
+
+        MovePlayerPacket move = new MovePlayerPacket();
+        move.setRuntimeEntityId(player.getEntityId());
+        move.setPosition(position);
+        move.setRotation(player.getRotation());
+        move.setMode(MovePlayerPacket.Mode.TELEPORT);
+        move.setTeleportationCause(MovePlayerPacket.TeleportationCause.COMMAND);
+        move.setOnGround(true);
+        move.setTick(0);
+        player.getSession().sendPacket(move);
+        broadcastSeen(player, move);
+    }
+
     /** Shows everyone else a change to the player's entity data, e.g. starting to sneak. */
     public void broadcastEntityData(Player player) {
         SetEntityDataPacket entityData = new SetEntityDataPacket();
@@ -276,6 +304,21 @@ public class PlayerManager {
         sound.setIdentifier("");
         sound.setEntityUniqueId(-1);
         broadcastAt(position, sound);
+    }
+
+    /**
+     * A sound the player themselves makes - being hurt, dying, burping - for everyone who
+     * can hear it, the player included. The entity id tells clients which entity it came
+     * from, so they can follow them or pick the right voice.
+     */
+    public void broadcastEntitySound(Player player, SoundEvent event) {
+        LevelSoundEventPacket sound = new LevelSoundEventPacket();
+        sound.setSound(event);
+        sound.setPosition(player.getPosition());
+        sound.setExtraData(-1);
+        sound.setIdentifier("");
+        sound.setEntityUniqueId(player.getEntityId());
+        broadcastAt(player.getPosition(), sound);
     }
 
     /**

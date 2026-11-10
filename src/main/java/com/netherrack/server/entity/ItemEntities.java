@@ -5,6 +5,7 @@ import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.world.World;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.math.vector.Vector3i;
+import org.cloudburstmc.protocol.bedrock.data.LevelEvent;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataMap;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataTypes;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityFlag;
@@ -132,6 +133,9 @@ public class ItemEntities {
                 continue; // the inventory is full
             }
             picked = true;
+            // The item's own flying animation comes from TakeItemEntity; this is the "pop" it
+            // makes on the way, which vanilla sends as the infinity-arrow pickup level event.
+            players.broadcastLevelEvent(LevelEvent.SOUND_INFINITY_ARROW_PICKUP, item.getPosition(), 0);
 
             TakeItemEntityPacket take = new TakeItemEntityPacket();
             take.setItemRuntimeEntityId(item.getEntityId());

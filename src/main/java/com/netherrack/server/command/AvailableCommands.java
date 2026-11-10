@@ -73,6 +73,10 @@ public final class AvailableCommands {
         switch (parameter.kind()) {
             case PLAYER -> data.setType(CommandParam.TARGET);
             case INT -> data.setType(CommandParam.INT);
+            case STRING -> data.setType(CommandParam.STRING);
+            case COORD_X -> data.setType(CommandParam.COORD_X_FLOAT);
+            case COORD_Y -> data.setType(CommandParam.COORD_Y_FLOAT);
+            case COORD_Z -> data.setType(CommandParam.COORD_Z_FLOAT);
             case CHOICE -> data.setEnumData(enumData(parameter.typeName(), parameter.choices()));
         }
         return data;

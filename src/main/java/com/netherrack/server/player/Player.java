@@ -308,6 +308,11 @@ public class Player {
         this.chunkView = chunkView;
     }
 
+    /** The chunks this player's client has, or null before they've joined the world. */
+    public ChunkView getChunkView() {
+        return chunkView;
+    }
+
     /** Whether this player's client has the chunk at this position, so it can be shown what's there. */
     public boolean canSee(Vector3f position) {
         ChunkView view = chunkView;
