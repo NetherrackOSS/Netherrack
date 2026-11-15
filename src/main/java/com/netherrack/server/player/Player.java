@@ -64,6 +64,8 @@ public class Player {
     // The other players and items this player's client is showing, by entity id.
     private final Set<Long> shownEntities = ConcurrentHashMap.newKeySet();
     private volatile GameType gameMode;
+    /** Whether the client is flying right now, as it reported itself. */
+    private volatile boolean flying;
     private volatile Permission permission = Permission.MEMBER;
     private volatile int commandLevel;
     private volatile PlayerSurvival survival;
@@ -195,9 +197,32 @@ public class Player {
         return gameMode == GameType.SPECTATOR;
     }
 
+    /** Whether this game mode's client is allowed to toggle flight at all. */
+    public boolean mayFly() {
+        return gameMode == GameType.CREATIVE || gameMode == GameType.SPECTATOR;
+    }
+
+    /**
+     * Whether the client is flying right now. The client reports starting and stopping
+     * flight (see the auth input handler), and the server echoes the state back in its
+     * abilities packets - a client that is told it isn't flying stops flying at once, even
+     * in mid-air, so both sides have to agree.
+     */
+    public boolean isFlying() {
+        return flying;
+    }
+
+    public void setFlying(boolean flying) {
+        this.flying = flying;
+    }
+
     /** Switches the player's game mode and tells their client, which changes what they can do. */
     public void setGameMode(GameType gameMode) {
         this.gameMode = gameMode;
+        // A mode that can't fly ends the flight at once; the client is falling as it hears it.
+        if (!mayFly()) {
+            this.flying = false;
+        }
         SetPlayerGameTypePacket packet = new SetPlayerGameTypePacket();
         packet.setGamemode(gameMode.ordinal());
         session.sendPacket(packet);
@@ -277,6 +302,11 @@ public class Player {
                     Ability.OPEN_CONTAINERS, Ability.ATTACK_PLAYERS, Ability.ATTACK_MOBS));
         } else if (permission == Permission.OPERATOR) {
             base.getAbilityValues().add(Ability.OPERATOR_COMMANDS);
+        }
+        // The flight the client is in right now: without this bit, a client told its
+        // abilities again stops flying even in mid-air.
+        if (flying) {
+            base.getAbilityValues().add(Ability.FLYING);
         }
         base.setWalkSpeed(0.1f);
         base.setFlySpeed(0.05f);

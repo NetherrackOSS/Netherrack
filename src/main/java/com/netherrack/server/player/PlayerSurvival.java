@@ -363,7 +363,9 @@ public final class PlayerSurvival {
      */
     public synchronized void moved(World world, Vector3f from, Vector3f to, boolean onGround,
                                    Set<PlayerAuthInputData> input) {
-        if (dead || player.isCreative() || player.isSpectator()) {
+        // Flying clients measure no falls: their heights come and go with the flight, and
+        // the client is the one that knows it's up there.
+        if (dead || player.isCreative() || player.isSpectator() || player.isFlying()) {
             return;
         }
 

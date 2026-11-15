@@ -531,7 +531,7 @@ public class PlayerManager {
         packet.setMotion(Vector3f.ZERO);
         packet.setRotation(player.getRotation());
         packet.setHand(asShown(held));
-        packet.setGameType(GameType.SURVIVAL);
+        packet.setGameType(player.getGameMode());
         packet.setDeviceId(player.getDeviceId());
         packet.setBuildPlatform(player.getBuildPlatform());
         packet.getAdventureSettings().setUniqueEntityId(player.getEntityId());

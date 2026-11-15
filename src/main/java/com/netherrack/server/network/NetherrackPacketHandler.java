@@ -25,6 +25,7 @@ import org.cloudburstmc.netty.util.nethernet.TransportIdentityBinding;
 import org.cloudburstmc.protocol.bedrock.BedrockServerSession;
 import org.cloudburstmc.protocol.bedrock.codec.v2225.Bedrock_v2225;
 import org.cloudburstmc.protocol.bedrock.data.AuthoritativeMovementMode;
+import org.cloudburstmc.protocol.bedrock.data.Ability;
 import org.cloudburstmc.protocol.bedrock.data.ChatRestrictionLevel;
 import org.cloudburstmc.protocol.bedrock.data.EduSharedUriResource;
 import org.cloudburstmc.protocol.bedrock.data.GameType;
@@ -83,6 +84,7 @@ import org.cloudburstmc.protocol.bedrock.packet.PlayerActionPacket;
 import org.cloudburstmc.protocol.bedrock.packet.PlayerAuthInputPacket;
 import org.cloudburstmc.protocol.bedrock.packet.PlayStatusPacket;
 import org.cloudburstmc.protocol.bedrock.packet.PlayerHotbarPacket;
+import org.cloudburstmc.protocol.bedrock.packet.RequestAbilityPacket;
 import org.cloudburstmc.protocol.bedrock.packet.RequestChunkRadiusPacket;
 import org.cloudburstmc.protocol.bedrock.packet.RequestNetworkSettingsPacket;
 import org.cloudburstmc.protocol.bedrock.packet.RespawnPacket;
@@ -521,6 +523,20 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             players.broadcastEntityData(player);
         }
 
+        // The client says it started or stopped flying. The server keeps that state and
+        // echoes it back in an abilities packet: that echo is what keeps the client's own
+        // flight state and the server's in step. A client whose abilities say it isn't
+        // flying drops out of flight at once, even in mid-air, and the ghost fall damage
+        // that can follow is why the state may never drift. A mode that can't fly gets a
+        // packet that says so, which is the client's own cue to land.
+        if (packet.getInputData().contains(PlayerAuthInputData.START_FLYING)) {
+            player.setFlying(player.mayFly());
+            player.sendAbilities();
+        } else if (packet.getInputData().contains(PlayerAuthInputData.STOP_FLYING)) {
+            player.setFlying(false);
+            player.sendAbilities();
+        }
+
         Vector3f position = packet.getPosition();
         Vector3f rotation = packet.getRotation();
         boolean onGround = packet.getInputData().contains(PlayerAuthInputData.VERTICAL_COLLISION)
@@ -952,6 +968,32 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         }
         packet.setRuntimeEntityId(player.getEntityId());
         players.broadcastAt(player.getPosition(), packet);
+        return PacketSignal.HANDLED;
+    }
+
+    /**
+     * The client asking to turn an ability of its own on or off - in practice, flight
+     * (though some clients still announce flight through the auth input instead). The
+     * request is granted only in a game mode that may fly, and the answer goes back as an
+     * abilities packet: that packet is what tells the client what it really is doing, so
+     * a denied request gets one that repeats the state it already has.
+     */
+    @Override
+    public PacketSignal handle(RequestAbilityPacket packet) {
+        if (player == null || packet.getAbility() != Ability.FLYING
+                || packet.getType() != Ability.Type.BOOLEAN) {
+            return PacketSignal.HANDLED;
+        }
+        boolean requested = packet.isBoolValue();
+        if (requested == player.isFlying()) {
+            return PacketSignal.HANDLED; // already as it should be
+        }
+        if (requested && !player.mayFly()) {
+            player.sendAbilities(); // a reminder that this client may not fly
+            return PacketSignal.HANDLED;
+        }
+        player.setFlying(requested);
+        player.sendAbilities();
         return PacketSignal.HANDLED;
     }
 
