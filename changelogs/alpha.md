@@ -40,7 +40,6 @@ This list is not exhaustive. Additional bugs and limitations may be discovered d
 - **Lava damage was delayed:** Standing in lava took a moment before it started hurting. The damage now applies right away.
 
 ## What Has Not Been Tested
-- The terrain generator with real clients: its correctness so far is verified by server-side tests, not by playing.
 - Terrain beyond a single biome: no caves, ores, flowers, or biome variety yet - every chunk is plains.
 - World type switching for levels that already exist: `level-type` only decides what a *new* level is made as.
 - Infinite worlds created before this release will suddenly grow terrain when their empty chunks are next generated.
