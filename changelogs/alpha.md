@@ -24,7 +24,7 @@
 
 This list is not exhaustive. Additional bugs and limitations may be discovered during testing.
 
-# v0.2.0-alpha (unreleased)
+# v0.2.0-alpha
 ### Added
 - **NetherNet Networking:** Support for NetherNet. The server now generates a ``nethernet-identity.pem`` file on startup.
 - **Survival Statistics:** Statistics such as health, hunger, and many more have all been added.
@@ -38,6 +38,16 @@ This list is not exhaustive. Additional bugs and limitations may be discovered d
 - **Eating food didn't work:** Eating made no sound and the food stack never went down. Item uses and inventory requests that current clients carry inside their auth input packets were dropped entirely; they are now processed, so food can be eaten. The client's own consume request is honoured, and the server takes the food out of the slot exactly once.
 - **Inventory desync after eating:** When the client reported its inventory no longer matching the server's, the server ignored it and the two could stay out of step. The server now sends the inventory as it has it, which settles the mismatch.
 - **Lava damage was delayed:** Standing in lava took a moment before it started hurting. The damage now applies right away.
+
+## What Has Not Been Tested
+- The terrain generator with real clients: its correctness so far is verified by server-side tests, not by playing.
+- Terrain beyond a single biome: no caves, ores, flowers, or biome variety yet - every chunk is plains.
+- World type switching for levels that already exist: `level-type` only decides what a *new* level is made as.
+- Infinite worlds created before this release will suddenly grow terrain when their empty chunks are next generated.
+- Server stability under prolonged use, and behavior under heavy chunk-generation workloads.
+- Compatibility with every supported Minecraft: Bedrock Edition client version.
+
+This list is not exhaustive. Additional bugs and limitations may be discovered during testing.
 
 ## ⚠️ Alpha Notice
 
