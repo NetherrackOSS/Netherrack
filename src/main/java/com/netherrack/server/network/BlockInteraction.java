@@ -59,6 +59,15 @@ import java.util.Map;
 public class BlockInteraction {
 
     /**
+     * The parts of an item use that matter here, extracted from whichever of the two
+     * packets the client sent it in - an InventoryTransactionPacket or, on current
+     * clients, its PlayerAuthInputPacket. Both carry the same fields.
+     */
+    record UseData(Vector3i blockPosition, int blockFace, int hotbarSlot, Vector3f clickPosition,
+                   ItemData itemInHand, ItemUseTransaction.PredictedResult prediction) {
+    }
+
+    /**
      * Farthest a player may reach a block from, eyes to block center. Survival reach is
      * about 4.5 blocks; the rest is slack for lag between their movement and the action.
      */
@@ -132,11 +141,38 @@ public class BlockInteraction {
      * be placed anyway, and a carved pumpkin also worn, as the client falls back to that.
      */
     public boolean handleItemUse(Player player, InventoryTransactionPacket packet) {
-        Vector3i clicked = packet.getBlockPosition();
-        Face face = Face.of(packet.getBlockFace());
-        int slot = packet.getHotbarSlot();
+        return handleItemUse(player, new UseData(packet.getBlockPosition(), packet.getBlockFace(),
+                packet.getHotbarSlot(), packet.getClickPosition(), packet.getItemInHand(),
+                packet.getClientInteractPrediction()));
+    }
+
+    /**
+     * The same for the item use a current client carries in its PlayerAuthInputPacket
+     * rather than a transaction - same fields, same rules.
+     */
+    public boolean handleItemUse(Player player, ItemUseTransaction packet) {
+        return handleItemUse(player, new UseData(packet.getBlockPosition(), packet.getBlockFace(),
+                packet.getHotbarSlot(), packet.getClickPosition(), packet.getItemInHand(),
+                packet.getClientInteractPrediction()));
+    }
+
+    /**
+     * A right click on a block with the held item: uses the block if it's one that's used
+     * (a door, a lever...), unless the player sneaks; otherwise places the held block
+     * against the clicked face. Returns false if neither happened because the player holds
+     * an item that isn't a block, which might be used some other way, like armor put on.
+     * <p>
+     * The client reports clicks it found do nothing as well - while the button's held down,
+     * every frame - having changed nothing for them, and nothing happens for them here
+     * either. Otherwise a block it found wouldn't fit, like one at the player's feet, would
+     * be placed anyway, and a carved pumpkin also worn, as the client falls back to that.
+     */
+    private boolean handleItemUse(Player player, UseData packet) {
+        Vector3i clicked = packet.blockPosition();
+        Face face = Face.of(packet.blockFace());
+        int slot = packet.hotbarSlot();
         if (face == null || slot < 0 || slot >= PlayerInventory.HOTBAR_SIZE
-                || packet.getClientInteractPrediction() == ItemUseTransaction.PredictedResult.FAILURE) {
+                || packet.prediction() == ItemUseTransaction.PredictedResult.FAILURE) {
             return true;
         }
         Vector3i target = face.from(clicked);
@@ -175,7 +211,7 @@ public class BlockInteraction {
         List<BlockPlacement.Placed> placed = List.of();
         Placer placer = Placer.of(player.getPosition(), player.getRotation().getY(), player.isSneaking());
         if (refusal == null) {
-            float clickY = packet.getClickPosition() != null ? packet.getClickPosition().getY() : 0;
+            float clickY = packet.clickPosition() != null ? packet.clickPosition().getY() : 0;
             placed = BlockPlacement.plan(world, Blocks.of(VanillaData.get().placedBlock(held)), clicked, face, clickY,
                     placer);
             if (placed.isEmpty()) {
@@ -240,13 +276,13 @@ public class BlockInteraction {
      * The fluid is a source block, as vanilla's bucket places, so it's kept in the chunk
      * like any other block instead of being only what the client predicted.
      */
-    private void placeFluid(Player player, InventoryTransactionPacket packet, int slot, ItemData held,
+    private void placeFluid(Player player, UseData packet, int slot, ItemData held,
                             String fluid, Vector3i clicked, Face face) {
         String refusal = placementRefusal(player, packet, held, clicked);
         List<BlockPlacement.Placed> placed = List.of();
         if (refusal == null) {
             Block source = Blocks.of(VanillaData.get().defaultBlockState(fluid));
-            float clickY = packet.getClickPosition() != null ? packet.getClickPosition().getY() : 0;
+            float clickY = packet.clickPosition() != null ? packet.clickPosition().getY() : 0;
             Placer placer = Placer.of(player.getPosition(), player.getRotation().getY(), player.isSneaking());
             placed = BlockPlacement.plan(world, source, clicked, face, clickY, placer);
             if (placed.isEmpty()) {
@@ -304,7 +340,7 @@ public class BlockInteraction {
      * block goes away and the bucket becomes the filled one. Returns false when the clicked
      * block isn't a source to fill from, leaving the click to whatever else the item does.
      */
-    private boolean fillBucket(Player player, InventoryTransactionPacket packet, int slot, ItemData held,
+    private boolean fillBucket(Player player, UseData packet, int slot, ItemData held,
                                Vector3i clicked) {
         Block clickedBlock = world.getBlock(clicked.getX(), clicked.getY(), clicked.getZ());
         String filled = clickedBlock == null ? null : FILLED_BUCKETS.get(clickedBlock.getIdentifier());
@@ -312,8 +348,8 @@ public class BlockInteraction {
             return false;
         }
         boolean allowed = !player.isSpectator() && player.getPermission() != Permission.VISITOR
-                && packet.getItemInHand() != null && packet.getItemInHand().getDefinition() != null
-                && packet.getItemInHand().getDefinition().getRuntimeId() == held.getDefinition().getRuntimeId()
+                && packet.itemInHand() != null && packet.itemInHand().getDefinition() != null
+                && packet.itemInHand().getDefinition().getRuntimeId() == held.getDefinition().getRuntimeId()
                 && withinReach(player, clicked);
         if (!allowed) {
             Logger.debug(player.getUsername() + " could not fill a bucket from " + clicked);
@@ -342,12 +378,12 @@ public class BlockInteraction {
     }
 
     /** Why the placement can't happen, or null if nothing stops it yet. */
-    private String placementRefusal(Player player, InventoryTransactionPacket packet, ItemData held, Vector3i clicked) {
+    private String placementRefusal(Player player, UseData packet, ItemData held, Vector3i clicked) {
         if (!player.mayBuild()) {
             return "they may not build";
         }
-        if (held.isNull() || packet.getItemInHand() == null || packet.getItemInHand().getDefinition() == null
-                || held.getDefinition().getRuntimeId() != packet.getItemInHand().getDefinition().getRuntimeId()) {
+        if (held.isNull() || packet.itemInHand() == null || packet.itemInHand().getDefinition() == null
+                || held.getDefinition().getRuntimeId() != packet.itemInHand().getDefinition().getRuntimeId()) {
             return "the client holds something else";
         }
         if (!inWorld(clicked) || !withinReach(player, clicked)) {

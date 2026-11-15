@@ -77,6 +77,9 @@ public final class PlayerSurvival {
     /** How long eating an item takes, as vanilla does: 1.6 seconds for most foods. */
     private static final int EAT_DURATION_TICKS = 32;
 
+    /** How long after a finished meal its consume request may still arrive and be confirmed. */
+    private static final long EAT_CONFIRM_GRACE_MILLIS = 1000;
+
     private final Player player;
     /** For showing other players the hurt and death animations; null in tests. */
     private final PlayerManager players;
@@ -103,6 +106,7 @@ public final class PlayerSurvival {
     private boolean usingItem;
     /** What is being eaten, from which slot, and for how many ticks. */
     private String usingItemId;
+    private ItemData usingItemData;
     private int usingSlot = -1;
     private boolean usingOffhand;
     private int useTicks;
@@ -501,7 +505,12 @@ public final class PlayerSurvival {
      * starts the meal, the rest leave it running.
      */
     public synchronized boolean useItem(ItemData item, int slot, boolean offhand) {
-        if (dead || player.isSpectator() || Foods.of(item) == null) {
+        if (dead || player.isSpectator()) {
+            usingItem = false;
+            return false;
+        }
+        if (Foods.of(item) == null) {
+            // The server holds something else than the client's food, or it isn't food.
             usingItem = false;
             return false;
         }
@@ -516,14 +525,22 @@ public final class PlayerSurvival {
         }
         usingItem = true;
         usingItemId = id;
+        usingItemData = item;
         usingSlot = slot;
         usingOffhand = offhand;
         useTicks = 0;
+        player.getInventory().clearMealTake();
         return false;
     }
 
     /** The player let go before finishing what they were eating. */
     public synchronized void releaseItem() {
+        if (usingItem && player.getInventory().mealTakenByRequest()) {
+            // The client already took the item out, so the meal completes rather than
+            // leaving a taken item uneaten.
+            finishMeal();
+            return;
+        }
         usingItem = false;
     }
 
@@ -538,39 +555,60 @@ public final class PlayerSurvival {
         }
         PlayerInventory inventory = player.getInventory();
         if (!usingOffhand && player.getSelectedSlot() != usingSlot) {
-            usingItem = false; // switched away before finishing
+            cancelMeal("switched away from slot " + usingSlot);
             return;
         }
         ItemData held = usingOffhand ? inventory.getOffhand()
                 : usingSlot >= 0 && usingSlot < PlayerInventory.HOTBAR_SIZE
                         ? inventory.get(usingSlot) : ItemData.AIR;
-        if (held.isNull() || held.getDefinition() == null
-                || !held.getDefinition().getIdentifier().equals(usingItemId)) {
-            usingItem = false; // it's gone, or a different item is in the slot now
+        boolean sameItem = !held.isNull() && held.getDefinition() != null
+                && held.getDefinition().getIdentifier().equals(usingItemId);
+        if (!sameItem && !inventory.mealTakenByRequest()) {
+            cancelMeal(usingItemId + " is no longer in " + (usingOffhand ? "the offhand" : "slot " + usingSlot));
             return;
         }
         if (++useTicks < EAT_DURATION_TICKS) {
             return;
         }
+        finishMeal();
+    }
+
+    /** Finishes the meal: the client is told the use completed, the food is applied, and
+     * one item leaves the inventory - unless the client's own request already took it. */
+    private void finishMeal() {
         usingItem = false;
-        if (!eat(held)) {
-            return; // too full after all
+        ItemData eaten = usingItemData;
+        int slot = usingSlot;
+        boolean offhand = usingOffhand;
+        if (eaten == null || eaten.isNull() || eaten.getDefinition() == null) {
+            return;
         }
-        if (!player.isCreative()) {
-            ItemData left = usingOffhand ? inventory.useOneOffhand() : inventory.useOne(usingSlot);
-            sendSlot(left);
-        }
+        // The completion packet goes out before the inventory change, as vanilla does -
+        // after it, the client stops using the item and shows the slot as the server has it.
         CompletedUsingItemPacket completed = new CompletedUsingItemPacket();
-        completed.setItemId(held.getDefinition().getRuntimeId());
+        completed.setItemId(eaten.getDefinition().getRuntimeId());
         completed.setType(ItemUseType.EAT);
         player.getSession().sendPacket(completed);
+        ItemData left = null;
+        if (!player.isCreative()) {
+            PlayerInventory inventory = player.getInventory();
+            left = inventory.takeForMeal(slot, offhand, eaten);
+        }
+        if (left != null) {
+            sendSlot(slot, offhand, left);
+        }
+        eat(eaten); // too full after all: nothing more to do, the use is completed either way
+    }
+
+    private void cancelMeal(String reason) {
+        usingItem = false;
     }
 
     /** Tells this client what one of its inventory slots holds after the meal took an item. */
-    private void sendSlot(ItemData item) {
+    private void sendSlot(int slot, boolean offhand, ItemData item) {
         InventorySlotPacket packet = new InventorySlotPacket();
-        packet.setContainerId(usingOffhand ? ContainerId.OFFHAND : ContainerId.INVENTORY);
-        packet.setSlot(usingOffhand ? 0 : usingSlot);
+        packet.setContainerId(offhand ? ContainerId.OFFHAND : ContainerId.INVENTORY);
+        packet.setSlot(offhand ? 0 : slot);
         packet.setItem(item);
         player.getSession().sendPacket(packet);
     }

@@ -99,6 +99,16 @@ public class PlayerInventory {
     private final List<ItemData> dropped = new ArrayList<>();
     private final List<ItemData> consumed = new ArrayList<>();
 
+    /** How long after a meal's item was taken a repeat confirmation counts as the same one. */
+    private static final long EAT_CONFIRM_GRACE_MILLIS = 1000;
+    /** The last meal's item and slot, so a late confirmation isn't counted twice. */
+    private int lastEatenSlot = -1;
+    private boolean lastEatenOffhand;
+    private long lastEatenAt;
+    private ItemData lastEatenItem = ItemData.AIR;
+    /** Set when a client request took the meal's item, so the tick won't take another. */
+    private boolean mealTakenByRequest;
+
     /** The item in a main inventory slot. */
     public synchronized ItemData get(int slot) {
         return main[slot];
@@ -114,6 +124,95 @@ public class PlayerInventory {
     public synchronized ItemData useOneOffhand() {
         offhand = removed(offhand, 1);
         return offhand;
+    }
+
+    /**
+     * Takes one item out of a main inventory slot for eating, and gives the remainder a
+     * fresh stack id - a server-side change outside a request should, so the client shows
+     * the new count instead of holding on to what it predicted. Returns what's left.
+     */
+    public synchronized ItemData consumeOne(int slot) {
+        ItemData item = main[slot];
+        if (item.isNull() || item.getCount() <= 1) {
+            main[slot] = ItemData.AIR;
+            return ItemData.AIR;
+        }
+        main[slot] = withCount(item, item.getCount() - 1, nextNetId++);
+        return main[slot];
+    }
+
+    /** The offhand's version of {@link #consumeOne}. */
+    public synchronized ItemData consumeOneOffhand() {
+        if (offhand.isNull() || offhand.getCount() <= 1) {
+            offhand = ItemData.AIR;
+            return ItemData.AIR;
+        }
+        offhand = withCount(offhand, offhand.getCount() - 1, nextNetId++);
+        return offhand;
+    }
+
+    /**
+     * The client's eat confirmation for the food held in this slot. The client's own timer
+     * and the server's tick race to finish the meal, so this decides who takes the item
+     * out - and never lets both do it. Returns whether the request should take it now;
+     * otherwise the item was already taken and the client is only confirmed.
+     */
+    public synchronized boolean eatRequest(int slot, boolean fromOffhand, ItemData item) {
+        long now = System.currentTimeMillis();
+        if (lastEatenSlot == slot && lastEatenOffhand == fromOffhand
+                && sameItem(lastEatenItem, item) && now - lastEatenAt < EAT_CONFIRM_GRACE_MILLIS) {
+            return false;
+        }
+        if (fromOffhand) {
+            consumeOneOffhand();
+        } else {
+            consumeOne(slot);
+        }
+        lastEatenSlot = slot;
+        lastEatenOffhand = fromOffhand;
+        lastEatenAt = now;
+        lastEatenItem = item;
+        mealTakenByRequest = true;
+        return true;
+    }
+
+    /** Whether a client request already took the meal's item, which the tick shouldn't repeat. */
+    public synchronized boolean mealTakenByRequest() {
+        return mealTakenByRequest;
+    }
+
+    /** Forgets that a client request took a meal's item, as a new meal starts. */
+    public synchronized void clearMealTake() {
+        mealTakenByRequest = false;
+    }
+
+    /**
+     * The tick finishing a meal takes one item out of the slot it came from - unless a
+     * client request already did. Returns the item the slot holds now, or null if nothing
+     * was taken here because the client already has the change.
+     */
+    public synchronized ItemData takeForMeal(int slot, boolean fromOffhand, ItemData eaten) {
+        if (mealTakenByRequest) {
+            mealTakenByRequest = false;
+            return null;
+        }
+        ItemData left;
+        if (fromOffhand) {
+            if (offhand.isNull()) {
+                return null;
+            }
+            left = consumeOneOffhand();
+        } else {
+            if (slot < 0 || slot >= HOTBAR_SIZE || get(slot).isNull()) {
+                return null;
+            }
+            left = consumeOne(slot);
+        }
+        lastEatenSlot = slot;
+        lastEatenOffhand = fromOffhand;
+        lastEatenAt = System.currentTimeMillis();
+        lastEatenItem = eaten;
+        return left;
     }
 
     /**
@@ -428,17 +527,23 @@ public class PlayerInventory {
             note(changes, from);
             touch(touched, drop.getSource());
         } else if (action instanceof ConsumeAction consume) {
-            Place from = checked(consume.getSource(), requestId, changes);
+            Place from = resolve(consume.getSource());
             ItemData item = get(from);
             if (from.kind() != Kind.CRAFTING && (item.isNull() || Foods.of(item) != null)) {
-                // Eating food is driven and counted by the server tick (PlayerSurvival),
-                // so this is just the client confirming what it predicted. Answer with the
-                // slot as the server has it (possibly now empty) rather than taking a
-                // second item.
+                // Eating food: the client's consume request and the server's tick race to
+                // finish the meal, and only one of them may take the item out. The client's
+                // prediction may name a stack id the server has never used, so the strict
+                // id check is skipped and the inventory decides.
+                boolean offhand = from.kind() == Kind.OFFHAND;
+                if (eatRequest(offhand ? 0 : from.index(), offhand, item)) {
+                    consumedNow.add(item.toBuilder().count(1).build());
+                }
                 note(changes, from);
                 touch(touched, consume.getSource());
             } else {
                 // A crafting ingredient: the client says how many of the stack it used up.
+                from = checked(consume.getSource(), requestId, changes);
+                item = get(from);
                 if (item.isNull() || consume.getCount() < 1 || consume.getCount() > item.getCount()) {
                     throw new Refused("can't consume " + consume.getCount()
                             + " from a stack of " + item.getCount());
