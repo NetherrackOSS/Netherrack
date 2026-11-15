@@ -68,6 +68,15 @@ public final class PlayerSurvival {
     /** A single movement larger than this is a teleport, not a step or a fall. */
     private static final double MAX_STEP = 10;
 
+<<<<<<< Updated upstream
+=======
+    /** How long eating an item takes, as vanilla does: 1.6 seconds for most foods. */
+    private static final int EAT_DURATION_TICKS = 32;
+
+    /** How long after a finished meal its consume request may still arrive and be confirmed. */
+    private static final long EAT_CONFIRM_GRACE_MILLIS = 1000;
+
+>>>>>>> Stashed changes
     private final Player player;
     /** For showing other players the hurt and death animations; null in tests. */
     private final PlayerManager players;
@@ -91,6 +100,16 @@ public final class PlayerSurvival {
     private int voidTimer;
     private boolean inWater;
     private boolean inLava;
+<<<<<<< Updated upstream
+=======
+    private boolean usingItem;
+    /** What is being eaten, from which slot, and for how many ticks. */
+    private String usingItemId;
+    private ItemData usingItemData;
+    private int usingSlot = -1;
+    private boolean usingOffhand;
+    private int useTicks;
+>>>>>>> Stashed changes
     private int airSinceSent = MAX_AIR;
     private boolean fireWasSent;
     private int statsSinceSent;
@@ -427,6 +446,169 @@ public final class PlayerSurvival {
         }
     }
 
+<<<<<<< Updated upstream
+=======
+    /**
+     * Eats one serving of a food item: restores hunger and the saturation that comes with
+     * it, capped at full, and burps. The item itself comes out of the inventory in
+     * {@link #useItem}. Returns whether the player could eat it at all.
+     */
+    public synchronized boolean eat(ItemData item) {
+        Foods.Food eaten = Foods.of(item);
+        if (dead || eaten == null) {
+            return false;
+        }
+        if (food >= MAX_FOOD && !Foods.alwaysEdible(item) && !player.isCreative()) {
+            return false; // too full to eat, though the client usually won't ask
+        }
+        if (food < MAX_FOOD) {
+            food = Math.min(MAX_FOOD, food + eaten.nutrition());
+            saturation = Math.min(food, saturation + eaten.nutrition() * eaten.saturationModifier() * 2f);
+            sendAttributes();
+        }
+        if (players != null) {
+            players.broadcastEntitySound(player, SoundEvent.BURP);
+        }
+        return true;
+    }
+
+    /**
+     * The player using what they hold on air: this starts eating. Finishing is driven by
+     * the server tick (see {@link #tickUsingItem}), as vanilla does, so it doesn't depend
+     * on the client sending more use packets. Returns whether something was eaten right
+     * away, which it never is - the caller has nothing to take out of the inventory yet.
+     */
+    public synchronized boolean useItem(ItemData item) {
+        return useItem(item, player.getSelectedSlot(), false);
+    }
+
+    /**
+     * Starts eating the item held in the given hotbar slot, or the offhand. Called from
+     * every click-air the client sends while holding the button down; only the first one
+     * starts the meal, the rest leave it running.
+     */
+    public synchronized boolean useItem(ItemData item, int slot, boolean offhand) {
+        if (dead || player.isSpectator()) {
+            usingItem = false;
+            return false;
+        }
+        if (Foods.of(item) == null) {
+            // The server holds something else than the client's food, or it isn't food.
+            usingItem = false;
+            return false;
+        }
+        if (food >= MAX_FOOD && !Foods.alwaysEdible(item) && !player.isCreative()) {
+            usingItem = false;
+            return false;
+        }
+        String id = item.getDefinition() == null ? null : item.getDefinition().getIdentifier();
+        if (usingItem && id != null && id.equals(usingItemId)
+                && offhand == usingOffhand && (offhand || slot == usingSlot)) {
+            return false; // the same meal, still going
+        }
+        usingItem = true;
+        usingItemId = id;
+        usingItemData = item;
+        usingSlot = slot;
+        usingOffhand = offhand;
+        useTicks = 0;
+        player.getInventory().clearMealTake();
+        return false;
+    }
+
+    /** The player let go before finishing what they were eating. */
+    public synchronized void releaseItem() {
+        if (usingItem && player.getInventory().mealTakenByRequest()) {
+            // The client already took the item out, so the meal completes rather than
+            // leaving a taken item uneaten.
+            finishMeal();
+            return;
+        }
+        usingItem = false;
+    }
+
+    /**
+     * Advances a meal by one tick, finishing it after {@link #EAT_DURATION_TICKS}: the food
+     * is applied, one is taken out of the slot it came from, and the client is told both
+     * that the use completed and what the slot holds now.
+     */
+    private void tickUsingItem() {
+        if (!usingItem) {
+            return;
+        }
+        PlayerInventory inventory = player.getInventory();
+        if (!usingOffhand && player.getSelectedSlot() != usingSlot) {
+            cancelMeal("switched away from slot " + usingSlot);
+            return;
+        }
+        ItemData held = usingOffhand ? inventory.getOffhand()
+                : usingSlot >= 0 && usingSlot < PlayerInventory.HOTBAR_SIZE
+                        ? inventory.get(usingSlot) : ItemData.AIR;
+        boolean sameItem = !held.isNull() && held.getDefinition() != null
+                && held.getDefinition().getIdentifier().equals(usingItemId);
+        if (!sameItem && !inventory.mealTakenByRequest()) {
+            cancelMeal(usingItemId + " is no longer in " + (usingOffhand ? "the offhand" : "slot " + usingSlot));
+            return;
+        }
+        if (++useTicks < EAT_DURATION_TICKS) {
+            return;
+        }
+        finishMeal();
+    }
+
+    /** Finishes the meal: the client is told the use completed, the food is applied, and
+     * one item leaves the inventory - unless the client's own request already took it. */
+    private void finishMeal() {
+        usingItem = false;
+        ItemData eaten = usingItemData;
+        int slot = usingSlot;
+        boolean offhand = usingOffhand;
+        if (eaten == null || eaten.isNull() || eaten.getDefinition() == null) {
+            return;
+        }
+        // The completion packet goes out before the inventory change, as vanilla does -
+        // after it, the client stops using the item and shows the slot as the server has it.
+        CompletedUsingItemPacket completed = new CompletedUsingItemPacket();
+        completed.setItemId(eaten.getDefinition().getRuntimeId());
+        completed.setType(ItemUseType.EAT);
+        player.getSession().sendPacket(completed);
+        ItemData left = null;
+        if (!player.isCreative()) {
+            PlayerInventory inventory = player.getInventory();
+            left = inventory.takeForMeal(slot, offhand, eaten);
+        }
+        if (left != null) {
+            sendSlot(slot, offhand, left);
+        }
+        eat(eaten); // too full after all: nothing more to do, the use is completed either way
+    }
+
+    private void cancelMeal(String reason) {
+        usingItem = false;
+    }
+
+    /** Tells this client what one of its inventory slots holds after the meal took an item. */
+    private void sendSlot(int slot, boolean offhand, ItemData item) {
+        InventorySlotPacket packet = new InventorySlotPacket();
+        packet.setContainerId(offhand ? ContainerId.OFFHAND : ContainerId.INVENTORY);
+        packet.setSlot(offhand ? 0 : slot);
+        packet.setItem(item);
+        player.getSession().sendPacket(packet);
+    }
+
+    /**
+     * Kills the player outright, as /kill does. Unlike {@link #damage}, this ignores the
+     * invulnerability of creative and spectator players: the command kills them too.
+     */
+    public synchronized void kill(DamageCause cause) {
+        if (dead) {
+            return;
+        }
+        health = 0;
+        die(cause);
+    }
+
+>>>>>>> Stashed changes
     /** Dies: tells the client, and starts the respawn handshake once it says it's ready. */
     private synchronized void die(DamageCause cause) {
         if (dead) {

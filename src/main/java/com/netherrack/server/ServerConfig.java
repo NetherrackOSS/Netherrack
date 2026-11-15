@@ -74,12 +74,12 @@ public class ServerConfig {
                         "The language of the server's own messages in the console. Players see the game in the"
                                 + " language they've chosen themselves.",
                         "Allowed values: " + languages),
-                new Setting("level-type", "FLAT",
+                new Setting("level-type", "DEFAULT",
                         "The type of world to create when the level doesn't exist yet. A level that already exists"
                                 + " keeps the type it was created with.",
                         "Allowed values: \"flat\" (its layers are set by preset-type in netherrack.yml), or"
-                                + " \"default\" for generated terrain (not available yet: until it is, the world"
-                                + " stays empty)",
+                                + " \"default\" for generated terrain - hills, valleys, lakes and trees, new every"
+                                + " seed.",
                         "Commenting this out is the same as \"default\"."),
                 new Setting("op-permission-level", "2",
                         "Which commands operators can use: 0 only the ones every player can, 2 adds commands"

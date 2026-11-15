@@ -477,6 +477,38 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         if (!packet.getPlayerActions().isEmpty()) {
             blockInteraction.handleActions(player, packet.getPlayerActions());
         }
+        // Current clients carry their item uses and inventory requests in here rather than
+        // in transactions - including the food use that starts eating, which has to be seen
+        // even when the player stands perfectly still. An ITEM_RELEASE still comes as a
+        // separate transaction, so a let-go cancels the meal the usual way.
+        ItemUseTransaction itemUse = packet.getItemUseTransaction();
+        ItemStackRequest stackRequest = packet.getItemStackRequest();
+        if (itemUse != null || stackRequest != null) {
+            List<ItemData> armorBefore = player.getInventory().getArmor();
+            boolean changedInventory = false;
+            if (itemUse != null) {
+                changedInventory = processItemUse(new UseAction(itemUse.getActionType(),
+                        itemUse.getHotbarSlot(), itemUse.getHand(), itemUse.getItemInHand(),
+                        itemUse.getClientInteractPrediction(), itemUse.getBlockPosition(),
+                        itemUse.getBlockFace(), itemUse.getClickPosition()));
+                if (itemUse.getLegacyRequestId() != 0) {
+                    ItemStackResponsePacket response = new ItemStackResponsePacket();
+                    response.getEntries().add(player.getInventory().legacyResponse(itemUse.getLegacyRequestId(),
+                            legacySlots(itemUse.getLegacySlots())));
+                    session.sendPacket(response);
+                    changedInventory = true;
+                }
+            }
+            if (stackRequest != null) {
+                handleStackRequests(List.of(stackRequest));
+            }
+            if (changedInventory) {
+                sendInventory();
+            }
+            if (!player.getInventory().getArmor().equals(armorBefore)) {
+                players.broadcastArmor(player);
+            }
+        }
         if (packet.getInputData().contains(PlayerAuthInputData.START_SNEAKING)) {
             player.setSneaking(true);
             players.broadcastEntityData(player);
@@ -618,6 +650,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         List<ItemData> armorBefore = inventory.getArmor();
         boolean changedInventory = false;
 
+<<<<<<< Updated upstream
         if (packet.getTransactionType() == InventoryTransactionType.ITEM_USE
                 && (packet.getActionType() == 0 || packet.getActionType() == 1)) {
             int heldId = packet.getItemInHand() != null && packet.getItemInHand().getDefinition() != null
@@ -629,19 +662,37 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             boolean predictedToWork = packet.getClientInteractPrediction() != ItemUseTransaction.PredictedResult.FAILURE;
             if (!onBlockDone && predictedToWork && inventory.equipHeld(packet.getHotbarSlot(), heldId)) {
                 changedInventory = true;
+=======
+        if (packet.getTransactionType() == InventoryTransactionType.ITEM_USE) {
+            boolean changed = processItemUse(new UseAction(packet.getActionType(), packet.getHotbarSlot(),
+                    packet.getHand(), packet.getItemInHand(), packet.getClientInteractPrediction(),
+                    packet.getBlockPosition(), packet.getBlockFace(), packet.getClickPosition()));
+            if (packet.getLegacyRequestId() != 0) {
+                ItemStackResponsePacket response = new ItemStackResponsePacket();
+                response.getEntries().add(inventory.legacyResponse(packet.getLegacyRequestId(),
+                        legacySlots(packet.getLegacySlots())));
+                session.sendPacket(response);
+                changed = true;
             }
+            if (changed) {
+                sendInventory();
+            }
+        } else if (packet.getTransactionType() == InventoryTransactionType.ITEM_RELEASE) {
+            // Letting go early stops the meal; nothing has been taken out of the inventory.
+            if (survival != null) {
+                survival.releaseItem();
+>>>>>>> Stashed changes
+            }
+        } else if (packet.getTransactionType() == InventoryTransactionType.INVENTORY_MISMATCH) {
+            // The client says its inventory no longer matches the server's, so it's shown
+            // the inventory as the server has it - the mismatch is over with the resync.
+            sendInventory();
+            changedInventory = false;
         } else if (packet.getTransactionType() == InventoryTransactionType.NORMAL) {
             throwFromHotbar(packet.getActions());
             changedInventory = true;
         }
 
-        if (packet.getLegacyRequestId() != 0) {
-            ItemStackResponsePacket response = new ItemStackResponsePacket();
-            response.getEntries().add(inventory.legacyResponse(packet.getLegacyRequestId(),
-                    legacySlots(packet.getLegacySlots())));
-            session.sendPacket(response);
-            changedInventory = true;
-        }
         if (changedInventory) {
             sendInventory();
         }
@@ -649,6 +700,67 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             players.broadcastArmor(player);
         }
         return PacketSignal.HANDLED;
+    }
+
+    /**
+     * One item use, from whichever packet the client sent it in: a right click on a block
+     * (action type 0) uses the block or places the held block against it, and using armor -
+     * in the air (action type 1), or on a block when it isn't a block itself - puts it on,
+     * as vanilla does. Using food on air starts eating; the server tick finishes it after
+     * 1.6s and takes the item then, as vanilla does. Returns whether the inventory changed.
+     */
+    private boolean processItemUse(UseAction use) {
+        if (use.actionType() != 0 && use.actionType() != 1) {
+            return false;
+        }
+        PlayerInventory inventory = player.getInventory();
+        PlayerSurvival survival = player.getSurvival();
+        int slot = use.hotbarSlot();
+        boolean validSlot = slot >= 0 && slot < PlayerInventory.HOTBAR_SIZE;
+        int heldId = use.itemInHand() != null && use.itemInHand().getDefinition() != null
+                ? use.itemInHand().getDefinition().getRuntimeId() : 0;
+        // On a block, a block item - a carved pumpkin or a head too - is placed, and a
+        // block that's used is used; the prediction only says whether the client expects
+        // that to work. An air use - eating, putting armor on - is handled whichever way
+        // the prediction points, as vanilla servers do.
+        boolean onBlockDone = use.actionType() == 0
+                && blockInteraction.handleItemUse(player, use.toItemUseTransaction());
+        boolean changedInventory = false;
+        if (!onBlockDone) {
+            boolean offhand = use.hand() == HandSlot.OFFHAND;
+            boolean eating = false;
+            if (use.actionType() == 1 && survival != null) {
+                ItemData held = offhand ? inventory.getOffhand()
+                        : validSlot ? inventory.get(slot) : ItemData.AIR;
+                if (Foods.of(held) != null) {
+                    survival.useItem(held, offhand ? -1 : slot, offhand);
+                    eating = true;
+                }
+            }
+            if (!eating && !offhand && validSlot && inventory.equipHeld(slot, heldId)) {
+                changedInventory = true;
+            }
+        }
+        return changedInventory;
+    }
+
+    /** The shared fields of an item use, from either packet that can carry one. */
+    private record UseAction(int actionType, int hotbarSlot, HandSlot hand, ItemData itemInHand,
+                             ItemUseTransaction.PredictedResult prediction, Vector3i blockPosition,
+                             int blockFace, Vector3f clickPosition) {
+
+        ItemUseTransaction toItemUseTransaction() {
+            ItemUseTransaction use = new ItemUseTransaction();
+            use.setActionType(actionType);
+            use.setHotbarSlot(hotbarSlot);
+            use.setHand(hand);
+            use.setItemInHand(itemInHand);
+            use.setClientInteractPrediction(prediction);
+            use.setBlockPosition(blockPosition);
+            use.setBlockFace(blockFace);
+            use.setClickPosition(clickPosition);
+            return use;
+        }
     }
 
     /**
@@ -677,9 +789,19 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         if (player == null) {
             return PacketSignal.HANDLED;
         }
+        handleStackRequests(packet.getRequests());
+        return PacketSignal.HANDLED;
+    }
+
+    /**
+     * Answers one or more inventory requests, whether they arrived on their own or inside
+     * a PlayerAuthInputPacket - the eat confirmation a current client sends rides along
+     * with its movement rather than in a packet of its own.
+     */
+    private void handleStackRequests(List<ItemStackRequest> requests) {
         List<ItemData> armorBefore = player.getInventory().getArmor();
         ItemStackResponsePacket response = new ItemStackResponsePacket();
-        for (ItemStackRequest request : packet.getRequests()) {
+        for (ItemStackRequest request : requests) {
             response.getEntries().add(player.getInventory().handle(request, player.isCreative()));
         }
         session.sendPacket(response);
@@ -687,7 +809,6 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         if (!player.getInventory().getArmor().equals(armorBefore)) {
             players.broadcastArmor(player);
         }
-        return PacketSignal.HANDLED;
     }
 
     private void throwFromHotbar(List<InventoryActionData> actions) {

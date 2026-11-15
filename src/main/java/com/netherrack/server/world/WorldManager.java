@@ -2,6 +2,7 @@ package com.netherrack.server.world;
 
 import com.netherrack.server.NetherrackConfig;
 import com.netherrack.server.ServerConfig;
+import com.netherrack.server.block.Block;
 import com.netherrack.server.setup.Lang;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.world.storage.WorldStorage;
@@ -80,9 +81,10 @@ public class WorldManager {
     }
 
     /**
-     * The flat world layers a new level gets, or null for generated terrain. level-type in
-     * server.properties picks between the two ("default" when it isn't set, as on Bedrock
-     * Dedicated Server), and level.preset-type in netherrack.yml picks the layers of a flat one.
+     * The flat world layers a new level gets, or null for generated terrain: level-type in
+     * server.properties picks between the two ("default", the terrain generator, when it
+     * isn't set, as on Bedrock Dedicated Server), and level.preset-type in netherrack.yml
+     * picks the layers of a flat one.
      */
     private FlatPreset newLevelLayers() {
         String type = config.get("level-type", "default").trim();
@@ -137,18 +139,64 @@ public class WorldManager {
     }
 
     /**
-     * A new level's spawn point with its height worked out: standing on the highest block at
-     * the spawn's x and z, so new players appear on the ground. With nothing there at all
-     * (terrain Netherrack can't generate), it's left as "find the ground" for the game to
-     * work out if the world is opened there.
+     * A new level's spawn point with its height worked out: standing on the highest block
+     * of a column that doesn't end in water. A terrain world's origin can sit in the
+     * middle of the sea, so when the spawn's own column is underwater, the search walks
+     * out in ever wider rings to the nearest one that isn't. With nothing at all generated
+     * (terrain Netherrack can't fill), the spawn stays where it is with no height, for
+     * the game to work out if the world is opened there.
      */
     private static NbtMap withSpawnHeight(NbtMap level, WorldGenerator generator) {
         int x = level.getInt("SpawnX", 0);
         int z = level.getInt("SpawnZ", 0);
-        Chunk chunk = new Chunk(x >> 4, z >> 4, generator.getBiome());
-        generator.generate(chunk);
-        Integer top = chunk.getHighestBlockY(x & 15, z & 15);
-        return top == null ? level : level.toBuilder().putInt("SpawnY", top + 1).build();
+        int[] dry = drySpawn(generator, x, z);
+        if (dry == null) {
+            return level;
+        }
+        return level.toBuilder()
+                .putInt("SpawnX", dry[0])
+                .putInt("SpawnY", dry[2] + 1)
+                .putInt("SpawnZ", dry[1])
+                .build();
+    }
+
+    /**
+     * The nearest column to the start that ends on dry ground, as {x, z, top y} - the
+     * start itself when it qualifies, else the closest in ever wider rings, or null when
+     * the whole search stays underwater or nothing at all was generated to stand on.
+     */
+    private static int[] drySpawn(WorldGenerator generator, int x, int z) {
+        Chunk start = new Chunk(x >> 4, z >> 4, generator.getBiome());
+        generator.generate(start);
+        Integer top = start.getHighestBlockY(x & 15, z & 15);
+        if (top == null) {
+            return null; // nothing generated here, so nothing will be nearby either
+        }
+        if (!isWater(start, x & 15, z & 15, top)) {
+            return new int[]{x, z, top};
+        }
+        for (int ring = 16; ring <= 512; ring += 16) {
+            for (int dx = -ring; dx <= ring; dx += 8) {
+                for (int dz = -ring; dz <= ring; dz += 8) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != ring) {
+                        continue; // the ring's edge - its inside was searched before
+                    }
+                    Chunk chunk = new Chunk((x + dx) >> 4, (z + dz) >> 4, generator.getBiome());
+                    generator.generate(chunk);
+                    Integer found = chunk.getHighestBlockY((x + dx) & 15, (z + dz) & 15);
+                    if (found != null && !isWater(chunk, (x + dx) & 15, (z + dz) & 15, found)) {
+                        return new int[]{x + dx, z + dz, found};
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Whether the highest block of a column is water, i.e. the column is underwater. */
+    private static boolean isWater(Chunk chunk, int localX, int localZ, int top) {
+        Block block = chunk.getBlock(localX, top, localZ);
+        return block != null && block.getIdentifier().equals("minecraft:water");
     }
 
     /** The game version as level.dat lists it: e.g. 1.26.60 is [1, 26, 60, 0, 0]. */
@@ -164,15 +212,18 @@ public class WorldManager {
     }
 
     /**
-     * The terrain to generate where the world has nothing saved: flat worlds' own layers.
-     * Netherrack can't generate other kinds of terrain yet, so those get nothing.
+     * The terrain to generate where the world has nothing saved: flat worlds' own layers,
+     * or - for the "infinite" worlds the game and vanilla servers make - rolling terrain
+     * from the world's seed (see TerrainGenerator). Other kinds of world get nothing.
      */
     private static WorldGenerator generatorFor(NbtMap level) {
         int type = level.getInt("Generator", 2);
+        if (type == 1) {
+            return new TerrainGenerator(level.getLong("RandomSeed", 0));
+        }
         if (type != 2) {
             return new EmptyGenerator(switch (type) {
                 case 0 -> "old";
-                case 1 -> "infinite";
                 default -> "type " + type;
             });
         }
