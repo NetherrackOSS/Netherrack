@@ -273,6 +273,43 @@ public class PlayerInventory {
         main[slot] = removed(item, count);
     }
 
+    /**
+     * Empties the whole inventory, as a player's death does: everything they carry - the
+     * main slots, armor and offhand - plus whatever was on the cursor or in the crafting
+     * grid, which would otherwise have gone back into the inventory when their screen
+     * closed. Returns what was in it.
+     */
+    public synchronized List<ItemData> spill() {
+        List<ItemData> spilled = new ArrayList<>();
+        for (ItemData item : main) {
+            if (!item.isNull()) {
+                spilled.add(item);
+            }
+        }
+        Arrays.fill(main, ItemData.AIR);
+        for (ItemData item : armor) {
+            if (!item.isNull()) {
+                spilled.add(item);
+            }
+        }
+        Arrays.fill(armor, ItemData.AIR);
+        if (!offhand.isNull()) {
+            spilled.add(offhand);
+        }
+        offhand = ItemData.AIR;
+        if (!cursor.isNull()) {
+            spilled.add(cursor);
+        }
+        cursor = ItemData.AIR;
+        for (ItemData item : crafting) {
+            if (!item.isNull()) {
+                spilled.add(item);
+            }
+        }
+        Arrays.fill(crafting, ItemData.AIR);
+        return spilled;
+    }
+
     /** The items thrown out of the inventory since the last call, for the world to take. */
     public synchronized List<ItemData> takeDropped() {
         List<ItemData> taken = List.copyOf(dropped);

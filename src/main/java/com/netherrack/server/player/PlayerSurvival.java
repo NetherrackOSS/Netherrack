@@ -1,6 +1,7 @@
 package com.netherrack.server.player;
 
 import com.netherrack.server.block.Block;
+import com.netherrack.server.entity.ItemEntities;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.world.Chunk;
 import com.netherrack.server.world.World;
@@ -83,6 +84,8 @@ public final class PlayerSurvival {
     private final Player player;
     /** For showing other players the hurt and death animations; null in tests. */
     private final PlayerManager players;
+    /** For dropping what a dead player carried into the world; null in tests. */
+    private final ItemEntities items;
 
     // Written by the player's network thread as they move and by the tick thread as the
     // world wears them down - hence volatile. Changing methods synchronize on this object.
@@ -117,9 +120,10 @@ public final class PlayerSurvival {
     private float sentSaturation = -1;
     private float sentExhaustion = -1;
 
-    public PlayerSurvival(Player player, PlayerManager players) {
+    public PlayerSurvival(Player player, PlayerManager players, ItemEntities items) {
         this.player = player;
         this.players = players;
+        this.items = items;
     }
 
     public float getHealth() {
@@ -641,6 +645,7 @@ public final class PlayerSurvival {
         inLava = false;
         usingItem = false;
         resetTimers();
+        dropCarriedItems();
         playDeath();
         sendStats();
 
@@ -677,6 +682,17 @@ public final class PlayerSurvival {
         lavaTimer = 0;
         fireDamageTimer = 0;
         voidTimer = 0;
+    }
+
+    /**
+     * Everything the player had when they died goes into the world around them, as it does
+     * in vanilla and every other server: however they died - falls, lava, starvation, or
+     * the /kill command - what they carried is left where they fell, in every game mode.
+     */
+    private void dropCarriedItems() {
+        if (items != null) {
+            items.dropFromDeath(player.getFeetPosition(), player.getInventory().spill());
+        }
     }
 
     /**

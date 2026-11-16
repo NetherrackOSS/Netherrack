@@ -19,6 +19,7 @@ import org.cloudburstmc.protocol.bedrock.packet.TakeItemEntityPacket;
 
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -78,6 +79,31 @@ public class ItemEntities {
     }
 
     /**
+     * Scatters what a player carried when they died around where they fell, as vanilla
+     * does: each stack a little away from the middle, so they don't all pile into one
+     * spot, and up in the air to fall and land. The drops wait to be picked up as long as
+     * a block's do, so a player who ran back for them gets them, but anyone standing by
+     * can take their share too.
+     */
+    public synchronized void dropFromDeath(Vector3f position, List<ItemData> carried) {
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        for (ItemData item : carried) {
+            if (item.isNull()) {
+                continue;
+            }
+            Vector3f at = Vector3f.from(
+                    position.getX() + (random.nextDouble() - 0.5) * 0.5,
+                    position.getY() + 0.5,
+                    position.getZ() + (random.nextDouble() - 0.5) * 0.5);
+            Vector3f velocity = Vector3f.from(
+                    (random.nextDouble() - 0.5) * 0.2,
+                    0.2,
+                    (random.nextDouble() - 0.5) * 0.2);
+            spawn(item, at, velocity, BLOCK_DROP_PICKUP_DELAY);
+        }
+    }
+
+    /**
      * One server tick: ages, moves and removes items, lets players pick them up, then shows
      * each player the items that have come into their view and stops showing those that left.
      */
@@ -117,9 +143,15 @@ public class ItemEntities {
     /**
      * Picks up the items within the player's reach, as much of each as fits in their
      * inventory. Everyone who can see it sees the item fly to the player; what's left
-     * stays on the ground.
+     * stays on the ground. Dead players pick up nothing: they're still standing where
+     * they fell while the death screen is up, and whatever they had just dropped would go
+     * straight back into them otherwise - Nukkit's pickup is gated on the player being
+     * alive for exactly that reason.
      */
     private void pickUp(Player player) {
+        if (player.isDead()) {
+            return;
+        }
         boolean picked = false;
         Iterator<ItemEntity> iterator = items.values().iterator();
         while (iterator.hasNext()) {

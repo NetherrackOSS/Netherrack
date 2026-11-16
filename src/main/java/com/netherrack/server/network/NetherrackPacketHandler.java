@@ -311,7 +311,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
                 skin, deviceId, buildPlatform, spawnPosition, gameMode);
         // Health, hunger and what wears them down. A returning player gets their saved
         // numbers back; a new one starts full.
-        PlayerSurvival survival = new PlayerSurvival(player, players);
+        PlayerSurvival survival = new PlayerSurvival(player, players, itemEntities);
         player.setSurvival(survival);
         if (saved != null) {
             survival.restore(saved.stats());
@@ -944,6 +944,9 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         session.sendPacket(teleport);
 
         sendInventory();
+        // What they wore dropped where they died, so everyone who can see them now sees
+        // them without armor.
+        players.broadcastArmor(player);
         players.broadcastMovement(player, true, 0);
         return PacketSignal.HANDLED;
     }

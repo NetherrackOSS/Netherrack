@@ -48,6 +48,25 @@ This list is not exhaustive. Additional bugs and limitations may be discovered d
 
 This list is not exhaustive. Additional bugs and limitations may be discovered during testing.
 
+# v0.3.0-alpha
+
+### Added
+- **Death drops:** When a player dies, everything they carry - their inventory, armor, offhand, and anything left on the cursor or in the crafting grid - drops where they fell, in every game mode and for every cause of death, `/kill` included. Each stack scatters out a little as it falls, waits a moment before it can be picked up, and despawns after five minutes like any other item: run back for your things before someone else does. Respawning no longer keeps what you had.
+
+### Fixed
+- **Ghost fall damage in creative mode:** A player flying in creative could take fall damage and flash red mid-air for no visible reason. The server never tracked the client's flight state: the client announces starting and stopping flight (inside its auth input, or through ability requests), and the server ignored both. It now keeps that state and echoes it back in its abilities packets - a client told it isn't flying drops out of the sky at once, even mid-air, which is what let the ghost damage in. Fall distance is also no longer measured while the player is flying.
+- **Other players always showed as survival mode:** The packet that shows a player to everyone else hardcoded survival as their game mode; it now shows their real one.
+- **Dying gave your items straight back:** Your own death drops could be picked up again - by you, while still on the death screen, since a dead player stays registered where they fell. Dead players now pick up nothing, as Nukkit's pickup rules do; anyone else standing by can still take their share.
+
+## What Has Not Been Tested
+- Items dropped into lava or fire are not destroyed yet; they sit there until picked up or despawned.
+- Death drops landing in unloaded chunks or in the void.
+- Dying while flying, or while a chest-like screen is open.
+- Compatibility with every supported Minecraft: Bedrock Edition client version.
+- Server stability under prolonged use.
+
+This list is not exhaustive. Additional bugs and limitations may be discovered during testing.
+
 ## ⚠️ Alpha Notice
 
 **Netherrack is experimental software.**
