@@ -203,6 +203,20 @@ public class Player {
         return survival != null && survival.isDead();
     }
 
+    /**
+     * Whether the others should currently be shown this player: always while they're
+     * alive, and for a moment after they've died, while their corpse is still lying
+     * where they fell. Dead players are despawned from everyone's view once the corpse
+     * is gone, and shown again when they respawn.
+     */
+    public boolean isShownToOthers() {
+        PlayerSurvival survival = this.survival;
+        if (survival == null) {
+            return true;
+        }
+        return !survival.isDead() || survival.isCorpseLingering();
+    }
+
     /** Whether this game mode's client is allowed to toggle flight at all. */
     public boolean mayFly() {
         return gameMode == GameType.CREATIVE || gameMode == GameType.SPECTATOR;

@@ -51,14 +51,17 @@ This list is not exhaustive. Additional bugs and limitations may be discovered d
 # v0.3.0-alpha
 
 ### Added
+- **PvP:** Players can now fight each other. A hit lands when the attacker is close enough - vanilla's three blocks of reach, double that in creative - and does what the held item does, as vanilla Bedrock counts damage: a fist 1, a sword or axe its tier's 4 through 8, a pickaxe or shovel a little less, anything else 1. A hit sends its target flying back and plays the hurt flash and sound, and if it takes their last half heart, the death screen and the chat say who dealt the blow. Every blow also respects the hurt the one before it left: for ten ticks, anything of the same strength or weaker is shrugged off, and a stronger blow lands for only the difference, so hammering the attack button isn't a stream of damage. Creative players can't be hit by other players, and spectators can't attack anyone.
 - **Death drops:** When a player dies, everything they carry - their inventory, armor, offhand, and anything left on the cursor or in the crafting grid - drops where they fell, in every game mode and for every cause of death, `/kill` included. Each stack scatters out a little as it falls, waits a moment before it can be picked up, and despawns after five minutes like any other item: run back for your things before someone else does. Respawning no longer keeps what you had.
 
 ### Fixed
 - **Ghost fall damage in creative mode:** A player flying in creative could take fall damage and flash red mid-air for no visible reason. The server never tracked the client's flight state: the client announces starting and stopping flight (inside its auth input, or through ability requests), and the server ignored both. It now keeps that state and echoes it back in its abilities packets - a client told it isn't flying drops out of the sky at once, even mid-air, which is what let the ghost damage in. Fall distance is also no longer measured while the player is flying.
 - **Other players always showed as survival mode:** The packet that shows a player to everyone else hardcoded survival as their game mode; it now shows their real one.
 - **Dying gave your items straight back:** Your own death drops could be picked up again - by you, while still on the death screen, since a dead player stays registered where they fell. Dead players now pick up nothing, as Nukkit's pickup rules do; anyone else standing by can still take their share.
+- **A dead player's corpse never went away:** Everyone else kept seeing the body where the player fell, and when the player respawned, the corpse teleported to the spawn and moved around with them - alive-looking to themselves, dead to everyone else. The body now stays where they fell for a second, long enough for the death animation to play, and is then despawned from everyone's view until they respawn and are shown again, fresh, as Nukkit does.
 
 ## What Has Not Been Tested
+- Fighting between players: whether hits land, how the knockback feels, and the deaths they cause.
 - Items dropped into lava or fire are not destroyed yet; they sit there until picked up or despawned.
 - Death drops landing in unloaded chunks or in the void.
 - Dying while flying, or while a chest-like screen is open.

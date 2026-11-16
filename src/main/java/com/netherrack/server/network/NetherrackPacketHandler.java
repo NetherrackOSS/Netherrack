@@ -690,6 +690,12 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             if (survival != null) {
                 survival.releaseItem();
             }
+        } else if (packet.getTransactionType() == InventoryTransactionType.ITEM_USE_ON_ENTITY) {
+            // A click on another entity: players are the only ones there are, so this is
+            // PvP. Action type 0 is a right click on them, which nothing uses yet.
+            if (packet.getActionType() == 1) {
+                handleAttack(packet);
+            }
         } else if (packet.getTransactionType() == InventoryTransactionType.INVENTORY_MISMATCH) {
             // The client says its inventory no longer matches the server's, so it's shown
             // the inventory as the server has it - the mismatch is over with the resync.
@@ -716,6 +722,26 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
      * as vanilla does. Using food on air starts eating; the server tick finishes it after
      * 1.6s and takes the item then, as vanilla does. Returns whether the inventory changed.
      */
+    /**
+     * One player attacking another: the transaction names the target by runtime entity id
+     * and the hotbar slot that swung. The server reads what they held from its own
+     * inventory rather than trusting the item the client says was in their hand.
+     */
+    private void handleAttack(InventoryTransactionPacket packet) {
+        PlayerSurvival survival = player.getSurvival();
+        if (survival == null) {
+            return;
+        }
+        Player target = players.byEntityId(packet.getRuntimeEntityId());
+        if (target == null) {
+            return; // players are the only entities, so nothing else is there to hit
+        }
+        int slot = packet.getHotbarSlot();
+        ItemData held = slot >= 0 && slot < PlayerInventory.HOTBAR_SIZE
+                ? player.getInventory().get(slot) : ItemData.AIR;
+        survival.attack(target, held);
+    }
+
     private boolean processItemUse(UseAction use) {
         if (use.actionType() != 0 && use.actionType() != 1) {
             return false;
@@ -932,6 +958,10 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         survival.respawn();
         player.setLocation(respawn, player.getRotation());
         chunkView.moveTo(respawn);
+
+        // The corpse the others were shown was removed when the player died; they're
+        // alive again, so show the reborn player to whoever can see them at the spawn.
+        players.updateVisibility();
 
         MovePlayerPacket teleport = new MovePlayerPacket();
         teleport.setRuntimeEntityId(runtimeEntityId);
