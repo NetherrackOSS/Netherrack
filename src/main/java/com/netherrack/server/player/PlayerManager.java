@@ -85,6 +85,16 @@ public class PlayerManager {
         return null;
     }
 
+    /** The player in the world with this runtime entity id, or null. Players are the only entities there are so far. */
+    public Player byEntityId(long entityId) {
+        for (Player player : players.values()) {
+            if (player.getEntityId() == entityId) {
+                return player;
+            }
+        }
+        return null;
+    }
+
     /**
      * Adds a player who has just finished loading into the world: everyone already here
      * goes on their player list (themselves included, as vanilla does) and they go on
@@ -136,7 +146,14 @@ public class PlayerManager {
     /**
      * Shows each player the others in the chunks their client has, and stops showing the
      * ones that have left those chunks - or the view has left them. Spectators are never
-     * shown. Run every tick, and whenever someone joins or changes game mode.
+     * shown, and dead players only while their corpse lingers: their client keeps its own
+     * view of themselves on the death screen, but everyone else's client holds on to the
+     * death animation they were sent and never lets the body go - so a player who
+     * respawned looked alive to themselves while everyone else saw their corpse walking
+     * around at the spawn. The body stays where they fell for a second, long enough for
+     * the death animation to play, and is then removed and re-shown fresh when they come
+     * back, as Nukkit does. Run every tick, and whenever someone joins or changes game
+     * mode.
      */
     public synchronized void updateVisibility() {
         for (Player viewer : players.values()) {
@@ -144,7 +161,8 @@ public class PlayerManager {
                 if (other == viewer) {
                     continue;
                 }
-                boolean visible = !other.isSpectator() && viewer.canSee(other.getPosition());
+                boolean visible = !other.isSpectator() && other.isShownToOthers()
+                        && viewer.canSee(other.getPosition());
                 if (visible && viewer.startShowing(other.getEntityId())) {
                     Equipment equipment = Equipment.of(other);
                     viewer.getSession().sendPacket(addPlayer(other, equipment.held()));

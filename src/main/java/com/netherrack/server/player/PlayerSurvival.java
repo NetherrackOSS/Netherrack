@@ -1,6 +1,7 @@
 package com.netherrack.server.player;
 
 import com.netherrack.server.block.Block;
+import com.netherrack.server.entity.ItemEntities;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.world.Chunk;
 import com.netherrack.server.world.World;
@@ -17,6 +18,7 @@ import org.cloudburstmc.protocol.bedrock.packet.DeathInfoPacket;
 import org.cloudburstmc.protocol.bedrock.packet.EntityEventPacket;
 import org.cloudburstmc.protocol.bedrock.packet.InventorySlotPacket;
 import org.cloudburstmc.protocol.bedrock.packet.RespawnPacket;
+import org.cloudburstmc.protocol.bedrock.packet.SetEntityMotionPacket;
 import org.cloudburstmc.protocol.bedrock.packet.SetHealthPacket;
 import org.cloudburstmc.protocol.bedrock.packet.TextPacket;
 import org.cloudburstmc.protocol.bedrock.packet.UpdateAttributesPacket;
@@ -55,6 +57,21 @@ public final class PlayerSurvival {
     /** Below this much health, easy difficulty stops starvation. */
     private static final float STARVATION_FLOOR = 10f;
 
+    /** How long a dead player's body stays visible to the others: twenty ticks, a second of game time. */
+    private static final long CORPSE_LINGER_MILLIS = 20 * 50;
+
+    /** How far an arm can hit, from the eye to the target's box, in the survival modes. */
+    private static final double ATTACK_REACH = 3;
+    /** Creative arms reach about twice as far, as vanilla's let them. */
+    private static final double CREATIVE_ATTACK_REACH = 6;
+
+    /** Vanilla's knockback: a hit pushes its target away from the attacker, and up. */
+    private static final float KNOCKBACK_HORIZONTAL = 0.4f;
+    private static final float KNOCKBACK_UP = 0.4f;
+
+    /** How long the hurt from a blow protects, in ticks: vanilla's damage immunity, ten ticks, half a second. */
+    private static final int HURT_IMMUNITY_TICKS = 10;
+
     private static final int DROWNING_INTERVAL = 20;
     private static final int DROWNING_DAMAGE = 2;
     private static final int LAVA_INTERVAL = 10;
@@ -83,6 +100,8 @@ public final class PlayerSurvival {
     private final Player player;
     /** For showing other players the hurt and death animations; null in tests. */
     private final PlayerManager players;
+    /** For dropping what a dead player carried into the world; null in tests. */
+    private final ItemEntities items;
 
     // Written by the player's network thread as they move and by the tick thread as the
     // world wears them down - hence volatile. Changing methods synchronize on this object.
@@ -94,6 +113,13 @@ public final class PlayerSurvival {
     private volatile int fireTicks;
     private volatile float fallDistance;
     private volatile boolean dead;
+    /** When the player died, so their corpse can linger on the others' screens for a moment. */
+    private volatile long diedAt;
+    /** Who hit them last, so a death by a player's hand can blame them. */
+    private volatile Player lastAttacker;
+
+    /** The hurt immunity every blow respects, what gives hits their rhythm (see {@link HurtImmunity}). */
+    private final HurtImmunity immunity = new HurtImmunity();
 
     // Only touched by the tick thread, inside synchronized methods.
     private int foodTickTimer;
@@ -117,9 +143,10 @@ public final class PlayerSurvival {
     private float sentSaturation = -1;
     private float sentExhaustion = -1;
 
-    public PlayerSurvival(Player player, PlayerManager players) {
+    public PlayerSurvival(Player player, PlayerManager players, ItemEntities items) {
         this.player = player;
         this.players = players;
+        this.items = items;
     }
 
     public float getHealth() {
@@ -157,6 +184,16 @@ public final class PlayerSurvival {
 
     public boolean isDead() {
         return dead;
+    }
+
+    /**
+     * Whether a dead player's body should still be shown to the others: it lingers where
+     * they fell for a second after they died, long enough for the death animation to play
+     * out, and then the visibility tick despawns it. They stay hidden from then on, until
+     * they respawn.
+     */
+    public synchronized boolean isCorpseLingering() {
+        return dead && System.currentTimeMillis() - diedAt < CORPSE_LINGER_MILLIS;
     }
 
     public boolean isInWater() {
@@ -229,6 +266,7 @@ public final class PlayerSurvival {
      * their hunger. Called from the server tick thread.
      */
     public synchronized void tick(World world) {
+        immunity.tick();
         if (dead) {
             return;
         }
@@ -440,12 +478,20 @@ public final class PlayerSurvival {
     /**
      * Hurts the player. Returns whether the damage was taken; creative and spectator
      * players, and the dead, take none.
+     * <p>
+     * Every blow also respects the {@link HurtImmunity} left by the one before it, which
+     * is what keeps a hammer on the attack button from being an unending stream of
+     * damage.
      */
     public synchronized boolean damage(float amount, DamageCause cause) {
         if (dead || amount <= 0 || player.isCreative() || player.isSpectator()) {
             return false;
         }
-        health = Math.max(0, health - amount);
+        float taken = immunity.hit(amount);
+        if (taken < 0) {
+            return false; // shrugged off, as vanilla's damage immunity does
+        }
+        health = Math.max(0, health - taken);
         exhaust(0.1); // being hurt is exhausting, as in vanilla
         playHurt(cause);
         if (health <= 0) {
@@ -454,6 +500,136 @@ public final class PlayerSurvival {
             sendStats();
         }
         return true;
+    }
+
+    /**
+     * Hurts the player for a blow another player dealt, remembering who dealt it: if it
+     * kills them, the death screen and the chat say they were slain by that player.
+     * Returns whether the damage was taken - and a creative player takes none, which is
+     * what keeps them from being hit at all.
+     */
+    public synchronized boolean damage(float amount, DamageCause cause, Player attacker) {
+        if (cause == DamageCause.PLAYER) {
+            lastAttacker = attacker;
+        }
+        return damage(amount, cause);
+    }
+
+    /**
+     * Attacks another player, as the attacker's client reported: hits them for what the
+     * held item does and sends them flying back, as vanilla's knockback does. A
+     * spectator can't attack, and a hit only lands if the attacker is alive and close
+     * enough - vanilla's three blocks of reach, double that in creative - measured eye to
+     * the target's box, with a little slack for the hit having been predicted before the
+     * packet arrived. What the hit does to its target is up to their {@link #damage}: a
+     * creative player takes none, which is what keeps creative players from being hit.
+     *
+     * @param held what the attacker held in the hand that swung, from the server's own
+     *             inventory, not the item the client claimed to have held
+     */
+    public void attack(Player target, ItemData held) {
+        if (dead || player.isSpectator() || target == player) {
+            return;
+        }
+        PlayerSurvival targetSurvival = target.getSurvival();
+        if (targetSurvival == null || target.isDead()) {
+            return; // nothing living to hit
+        }
+        if (!withinReach(target)) {
+            Logger.debug(player.getUsername() + " tried to hit " + target.getUsername() + " from out of reach.");
+            return;
+        }
+        if (!targetSurvival.damage(attackDamage(held), DamageCause.PLAYER, player)) {
+            return; // nothing happened to them: no knockback follows a hit that didn't land
+        }
+        knockback(target);
+        exhaust(0.1); // swinging at someone is tiring, as in vanilla
+    }
+
+    /**
+     * Whether the target is within swing's reach: the distance from the attacker's eye to
+     * the closest point of the target's box - half a block wide and 1.8 tall, as players
+     * are - against vanilla's attack range of three blocks, six in creative.
+     */
+    private boolean withinReach(Player target) {
+        Vector3f eye = player.getPosition();
+        Vector3f feet = target.getFeetPosition();
+        double px = Math.max(feet.getX() - 0.3, Math.min(eye.getX(), feet.getX() + 0.3));
+        double py = Math.max(feet.getY(), Math.min(eye.getY(), feet.getY() + 1.8));
+        double pz = Math.max(feet.getZ() - 0.3, Math.min(eye.getZ(), feet.getZ() + 0.3));
+        double dx = px - eye.getX();
+        double dy = py - eye.getY();
+        double dz = pz - eye.getZ();
+        double reach = player.isCreative() ? CREATIVE_ATTACK_REACH : ATTACK_REACH;
+        return dx * dx + dy * dy + dz * dz <= reach * reach + 0.5;
+    }
+
+    /**
+     * What a held item does to what it hits, as vanilla Bedrock counts damage: a fist
+     * does one point, a sword or an axe does its tier's four through eight (wood and gold
+     * 4, stone and copper 5, iron 6, diamond 7, netherite 8), a pickaxe or shovel a
+     * little less, and anything else hits as hard as a fist does.
+     */
+    private static float attackDamage(ItemData held) {
+        if (held.isNull() || held.getDefinition() == null) {
+            return 1;
+        }
+        String id = held.getDefinition().getIdentifier();
+        if (id.endsWith("_sword") || id.endsWith("_axe")) {
+            return 4 + tier(id);
+        }
+        if (id.endsWith("_pickaxe") || id.endsWith("_shovel")) {
+            return 2 + tier(id);
+        }
+        return 1;
+    }
+
+    /** How far up a tool's tier is, 0 to 4, read from its name. */
+    private static int tier(String id) {
+        if (id.contains("netherite")) {
+            return 4;
+        }
+        if (id.contains("diamond")) {
+            return 3;
+        }
+        if (id.contains("iron")) {
+            return 2;
+        }
+        if (id.contains("stone") || id.contains("copper")) {
+            return 1;
+        }
+        return 0; // wood or gold
+    }
+
+    /**
+     * Sends the player who was hit flying: away from the attacker, up a little, as
+     * vanilla's knockback does. Movement here is the client's to make - the packet hands
+     * their client a velocity, and their client then flies and reports where it went, so
+     * everyone watching sees the blow land.
+     */
+    private void knockback(Player target) {
+        Vector3f from = player.getFeetPosition();
+        Vector3f to = target.getFeetPosition();
+        double dx = to.getX() - from.getX();
+        double dz = to.getZ() - from.getZ();
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+        double x;
+        double z;
+        if (horizontal < 0.001) {
+            // Standing inside each other, so there's no direction between them: knock
+            // them back the way the attacker is looking instead.
+            double yaw = Math.toRadians(player.getRotation().getY());
+            x = -Math.sin(yaw);
+            z = Math.cos(yaw);
+        } else {
+            x = dx / horizontal;
+            z = dz / horizontal;
+        }
+        SetEntityMotionPacket motion = new SetEntityMotionPacket();
+        motion.setRuntimeEntityId(target.getEntityId());
+        motion.setMotion(Vector3f.from((float) (x * KNOCKBACK_HORIZONTAL), KNOCKBACK_UP,
+                (float) (z * KNOCKBACK_HORIZONTAL)));
+        target.getSession().sendPacket(motion);
     }
 
     public synchronized void heal(float amount) {
@@ -633,6 +809,9 @@ public final class PlayerSurvival {
             return;
         }
         dead = true;
+        // The body stays where they fell, on everyone's screen, for a moment before it
+        // despawns (see isCorpseLingering).
+        diedAt = System.currentTimeMillis();
         health = 0;
         fireTicks = 0;
         air = MAX_AIR;
@@ -641,6 +820,7 @@ public final class PlayerSurvival {
         inLava = false;
         usingItem = false;
         resetTimers();
+        dropCarriedItems();
         playDeath();
         sendStats();
 
@@ -656,6 +836,10 @@ public final class PlayerSurvival {
         DeathInfoPacket info = new DeathInfoPacket();
         info.setCauseAttackName(cause.deathKey());
         info.getMessageList().add(player.getUsername());
+        // A death at a player's hand is "was slain by <attacker>", so it names them too.
+        if (cause == DamageCause.PLAYER && lastAttacker != null) {
+            info.getMessageList().add(lastAttacker.getUsername());
+        }
         player.getSession().sendPacket(info);
 
         if (players != null) {
@@ -666,6 +850,9 @@ public final class PlayerSurvival {
             message.setNeedsTranslation(true);
             message.setMessage(cause.deathKey());
             message.getParameters().add(player.getUsername());
+            if (cause == DamageCause.PLAYER && lastAttacker != null) {
+                message.getParameters().add(lastAttacker.getUsername());
+            }
             players.sendToAll(message);
         }
         Logger.info(player.getUsername() + " died (" + cause.deathKey() + ").");
@@ -677,6 +864,17 @@ public final class PlayerSurvival {
         lavaTimer = 0;
         fireDamageTimer = 0;
         voidTimer = 0;
+    }
+
+    /**
+     * Everything the player had when they died goes into the world around them, as it does
+     * in vanilla and every other server: however they died - falls, lava, starvation, or
+     * the /kill command - what they carried is left where they fell, in every game mode.
+     */
+    private void dropCarriedItems() {
+        if (items != null) {
+            items.dropFromDeath(player.getFeetPosition(), player.getInventory().spill());
+        }
     }
 
     /**
@@ -695,6 +893,7 @@ public final class PlayerSurvival {
         inWater = false;
         inLava = false;
         usingItem = false;
+        immunity.reset();
         resetTimers();
         airSinceSent = air;
         fireWasSent = false;
@@ -768,6 +967,7 @@ public final class PlayerSurvival {
     /** What killed the player, and the translation key the client's death screen shows. */
     public enum DamageCause {
         GENERIC("death.attack.generic"),
+        PLAYER("death.attack.player"),
         FALL("death.attack.fall"),
         LAVA("death.attack.lava"),
         FIRE("death.attack.onFire"),
@@ -783,6 +983,56 @@ public final class PlayerSurvival {
 
         public String deathKey() {
             return deathKey;
+        }
+    }
+
+    /**
+     * Vanilla's damage immunity, the thing that gives blows their rhythm: for ten ticks
+     * after any blow - half a second, the hurt flash still on screen - a blow of the same
+     * strength or weaker is shrugged off entirely, and only a stronger one does anything,
+     * and then only the difference between it and the blow before it. The window opens
+     * with the first blow to land, is never extended by the ones it swallows, and
+     * forgets what it held once it closes. Nukkit keeps the same ten-tick window on
+     * every damage event (its EntityDamageEvent attack cooldown) and the same rule and
+     * reset on its EntityLiving, and Netherrack follows both.
+     */
+    static final class HurtImmunity {
+
+        /** How long the hurt from a blow protects, in ticks: ten, half a second of game time. */
+        private static final int IMMUNITY_TICKS = 10;
+
+        /** How many ticks the window has left. */
+        private int ticks;
+        /** What the blow that opened the window did, what it protects against. */
+        private float remembered;
+
+        /**
+         * What a blow does right now: the damage to take, or less than 0 when the window
+         * swallows it. A blow inside the window never pushes the window back.
+         */
+        float hit(float amount) {
+            if (ticks > 0) {
+                if (amount <= remembered) {
+                    return -1;
+                }
+                return amount - remembered;
+            }
+            remembered = amount;
+            ticks = IMMUNITY_TICKS;
+            return amount;
+        }
+
+        /** One tick passes; when the window closes, it forgets the blow it protected against. */
+        void tick() {
+            if (ticks > 0 && --ticks == 0) {
+                remembered = 0;
+            }
+        }
+
+        /** Forgets everything, as coming back to life does. */
+        void reset() {
+            ticks = 0;
+            remembered = 0;
         }
     }
 }

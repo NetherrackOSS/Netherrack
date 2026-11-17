@@ -29,8 +29,8 @@ import java.util.List;
  *   <li>Inventory: the 36 main slots, hotbar first, each item with its "Slot";</li>
  *   <li>Armor: helmet, chestplate, leggings, boots;</li>
  *   <li>Offhand: one item;</li>
- *   <li>PlayerUIItems: what was left on the inventory screen - the cursor (UI slot 0) and the
- *   crafting grid (28 to 31);</li>
+ *   <li>PlayerUIItems: what was left on a screen - the cursor (UI slot 0), the inventory
+ *   screen's crafting grid (28 to 31) and the crafting table's (32 to 40);</li>
  *   <li>Attributes: health, hunger, saturation and exhaustion, each with its "Name", "Base",
  *   "Current" and "Max", as vanilla keeps them;</li>
  *   <li>Air and Fire: the air left, in ticks, and how long the player is still burning.</li>
@@ -57,6 +57,11 @@ public final class PlayerData {
         for (int i = 0; i < contents.crafting().size(); i++) {
             if (!contents.crafting().get(i).isNull()) {
                 screen.add(item(contents.crafting().get(i), PlayerInventory.CRAFTING_FIRST_SLOT + i));
+            }
+        }
+        for (int i = 0; i < contents.table().size(); i++) {
+            if (!contents.table().get(i).isNull()) {
+                screen.add(item(contents.table().get(i), PlayerInventory.TABLE_FIRST_SLOT + i));
             }
         }
 
@@ -160,18 +165,27 @@ public final class PlayerData {
         }
         List<NbtMap> offhand = data.getList("Offhand", NbtType.COMPOUND, List.of());
         ItemData cursor = ItemData.AIR;
-        List<ItemData> crafting = new ArrayList<>();
+        ItemData[] crafting = new ItemData[PlayerInventory.CRAFTING_SIZE];
+        ItemData[] table = new ItemData[PlayerInventory.TABLE_SIZE];
+        Arrays.fill(crafting, ItemData.AIR);
+        Arrays.fill(table, ItemData.AIR);
         for (NbtMap entry : data.getList("PlayerUIItems", NbtType.COMPOUND, List.of())) {
-            if (entry.getByte("Slot", (byte) -1) == 0) {
+            int slot = entry.getByte("Slot", (byte) -1) & 0xFF;
+            if (slot == 0) {
                 cursor = item(entry);
-            } else {
-                crafting.add(item(entry));
+            } else if (slot >= PlayerInventory.CRAFTING_FIRST_SLOT
+                    && slot < PlayerInventory.CRAFTING_FIRST_SLOT + crafting.length) {
+                crafting[slot - PlayerInventory.CRAFTING_FIRST_SLOT] = item(entry);
+            } else if (slot >= PlayerInventory.TABLE_FIRST_SLOT
+                    && slot < PlayerInventory.TABLE_FIRST_SLOT + table.length) {
+                table[slot - PlayerInventory.TABLE_FIRST_SLOT] = item(entry);
             }
         }
 
         return new Saved(position, rotation, gameMode, data.getInt("SelectedInventorySlot", 0),
                 new PlayerInventory.Contents(List.of(main), armor,
-                        offhand.isEmpty() ? ItemData.AIR : item(offhand.get(0)), cursor, crafting),
+                        offhand.isEmpty() ? ItemData.AIR : item(offhand.get(0)), cursor,
+                        List.of(crafting), List.of(table)),
                 stats(data));
     }
 

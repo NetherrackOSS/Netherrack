@@ -1,5 +1,6 @@
 package com.netherrack.server.player;
 
+import com.netherrack.server.crafting.Recipes;
 import com.netherrack.server.network.VanillaData;
 import com.netherrack.server.util.Logger;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerId;
@@ -10,6 +11,7 @@ import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemSt
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequestSlotData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.ConsumeAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.CraftCreativeAction;
+import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.CraftRecipeAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.DestroyAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.DropAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.ItemStackRequestAction;
@@ -32,9 +34,11 @@ import java.util.Objects;
 
 /**
  * A player's inventory: 36 main slots (the first 9 are the hotbar), 4 armor slots and the
- * offhand - plus, while the inventory screen is open, the cursor (what the player is
- * moving around) and the 2x2 crafting grid. Items only sit in the crafting grid for now;
- * there are no recipes to craft with yet.
+ * offhand - plus, while a screen is open, the cursor (what the player is moving around)
+ * and a crafting grid: the inventory screen's 2x2, or a crafting table's 3x3. The grids
+ * hold what the player lays out, and a craft request names the recipe it's making - if the
+ * grid really holds it, its ingredients are used up and the result appears in a "created
+ * output" slot for the rest of that request, to be moved somewhere real.
  * <p>
  * Items thrown out of the inventory are collected here, for the caller to take with
  * {@link #takeDropped()} and put into the world.
@@ -58,15 +62,20 @@ public class PlayerInventory {
     public static final int SIZE = 36;
     public static final int HOTBAR_SIZE = 9;
     private static final int ARMOR_SIZE = 4;
-    private static final int CRAFTING_SIZE = 4;
+    /** The inventory screen's crafting grid: four slots. */
+    static final int CRAFTING_SIZE = 4;
+    /** The crafting table's 3x3 grid: nine slots. */
+    static final int TABLE_SIZE = 9;
 
     /** The inventory screen's crafting grid is UI slots 28 to 31 (a crafting table's 3x3 grid starts at 32). */
     static final int CRAFTING_FIRST_SLOT = 28;
+    /** The crafting table's 3x3 grid, as Nukkit numbers its big crafting grid: UI slots 32 to 40. */
+    static final int TABLE_FIRST_SLOT = 32;
 
     /** How many requests' changes are remembered for later requests to refer back to. */
     private static final int RECENT_REQUESTS = 64;
 
-    private enum Kind { MAIN, ARMOR, OFFHAND, CURSOR, CRAFTING, CREATED }
+    private enum Kind { MAIN, ARMOR, OFFHAND, CURSOR, CRAFTING, TABLE, CREATED }
 
     /** A slot somewhere in the inventory. */
     private record Place(Kind kind, int index) {
@@ -89,8 +98,11 @@ public class PlayerInventory {
     private ItemData[] main = emptySlots(SIZE);
     private ItemData[] armor = emptySlots(ARMOR_SIZE);
     private ItemData[] crafting = emptySlots(CRAFTING_SIZE);
+    private ItemData[] table = emptySlots(TABLE_SIZE);
     private ItemData offhand = ItemData.AIR;
     private ItemData cursor = ItemData.AIR;
+    /** Whether the crafting table screen is open, its 3x3 grid showing instead of the 2x2. */
+    private boolean tableOpen;
     /** What a creative player took from the creative inventory, for the rest of one request. */
     private ItemData created = ItemData.AIR;
 
@@ -273,6 +285,51 @@ public class PlayerInventory {
         main[slot] = removed(item, count);
     }
 
+    /**
+     * Empties the whole inventory, as a player's death does: everything they carry - the
+     * main slots, armor and offhand - plus whatever was on the cursor or in a crafting
+     * grid, which would otherwise have gone back into the inventory when their screen
+     * closed. Returns what was in it.
+     */
+    public synchronized List<ItemData> spill() {
+        List<ItemData> spilled = new ArrayList<>();
+        for (ItemData item : main) {
+            if (!item.isNull()) {
+                spilled.add(item);
+            }
+        }
+        Arrays.fill(main, ItemData.AIR);
+        for (ItemData item : armor) {
+            if (!item.isNull()) {
+                spilled.add(item);
+            }
+        }
+        Arrays.fill(armor, ItemData.AIR);
+        if (!offhand.isNull()) {
+            spilled.add(offhand);
+        }
+        offhand = ItemData.AIR;
+        if (!cursor.isNull()) {
+            spilled.add(cursor);
+        }
+        cursor = ItemData.AIR;
+        for (ItemData item : crafting) {
+            if (!item.isNull()) {
+                spilled.add(item);
+            }
+        }
+        Arrays.fill(crafting, ItemData.AIR);
+        for (ItemData item : table) {
+            if (!item.isNull()) {
+                spilled.add(item);
+            }
+        }
+        Arrays.fill(table, ItemData.AIR);
+        // Death takes the screen away too, whatever the client does with it.
+        tableOpen = false;
+        return spilled;
+    }
+
     /** The items thrown out of the inventory since the last call, for the world to take. */
     public synchronized List<ItemData> takeDropped() {
         List<ItemData> taken = List.copyOf(dropped);
@@ -303,8 +360,7 @@ public class PlayerInventory {
         List<ItemData> consumedNow = new ArrayList<>();
         try {
             for (ItemStackRequestAction action : request.getActions()) {
-                apply(action, requestId, creative, changes, touched, consumedNow);
-            }
+                apply(action, request.getActions(), requestId, creative, changes, touched, consumedNow);            }
             checkArmor();
         } catch (Refused refused) {
             before.restore();
@@ -386,13 +442,13 @@ public class PlayerInventory {
 
     /** Everything in the inventory at once, e.g. to save it. */
     public synchronized Contents getContents() {
-        return new Contents(List.of(main), List.of(armor), offhand, cursor, List.of(crafting));
+        return new Contents(List.of(main), List.of(armor), offhand, cursor, List.of(crafting), List.of(table));
     }
 
     /**
      * Fills the inventory with saved contents, as a returning player joins. What was on the
-     * cursor or in the crafting grid goes back into the main inventory, as closing the
-     * inventory screen would have done; what doesn't fit is thrown out.
+     * cursor or in a crafting grid goes back into the main inventory, as closing the screen
+     * would have done; what doesn't fit is thrown out.
      */
     public synchronized void restore(Contents contents) {
         for (int i = 0; i < SIZE && i < contents.main().size(); i++) {
@@ -404,6 +460,9 @@ public class PlayerInventory {
         offhand = restored(contents.offhand());
         returnToMain(contents.cursor());
         for (ItemData item : contents.crafting()) {
+            returnToMain(item);
+        }
+        for (ItemData item : contents.table()) {
             returnToMain(item);
         }
     }
@@ -418,11 +477,12 @@ public class PlayerInventory {
      *
      * @param main     the 36 main slots, hotbar first
      * @param armor    helmet, chestplate, leggings, boots
-     * @param cursor   what's being moved around on the inventory screen
-     * @param crafting the 2x2 crafting grid
+     * @param cursor   what's being moved around on a screen
+     * @param crafting the inventory screen's 2x2 crafting grid
+     * @param table    the crafting table's 3x3 grid
      */
     public record Contents(List<ItemData> main, List<ItemData> armor, ItemData offhand, ItemData cursor,
-                           List<ItemData> crafting) {
+                           List<ItemData> crafting, List<ItemData> table) {
     }
 
     private void remember(int requestId, List<Change> changes) {
@@ -430,6 +490,34 @@ public class PlayerInventory {
         if (recent.size() > RECENT_REQUESTS) {
             recent.removeFirst();
         }
+    }
+
+    /**
+     * Opens the crafting table screen: from now on the client shows the 3x3 grid, until
+     * {@link #closeTable()} says otherwise.
+     */
+    public synchronized void openTable() {
+        tableOpen = true;
+    }
+
+    /** Whether the crafting table screen is open. */
+    public synchronized boolean isTableOpen() {
+        return tableOpen;
+    }
+
+    /**
+     * Closes the crafting table screen, as the client closing it does, and puts whatever
+     * was left in the 3x3 grid back into the main inventory; what doesn't fit is thrown
+     * out. Returns whether anything moved.
+     */
+    public synchronized boolean closeTable() {
+        tableOpen = false;
+        boolean moved = false;
+        for (int i = 0; i < TABLE_SIZE; i++) {
+            moved |= returnToMain(table[i]);
+            table[i] = ItemData.AIR;
+        }
+        return moved;
     }
 
     /**
@@ -443,6 +531,10 @@ public class PlayerInventory {
         for (int i = 0; i < CRAFTING_SIZE; i++) {
             moved |= returnToMain(crafting[i]);
             crafting[i] = ItemData.AIR;
+        }
+        for (int i = 0; i < TABLE_SIZE; i++) {
+            moved |= returnToMain(table[i]);
+            table[i] = ItemData.AIR;
         }
         return moved;
     }
@@ -474,8 +566,21 @@ public class PlayerInventory {
         return packets;
     }
 
-    private void apply(ItemStackRequestAction action, int requestId, boolean creative, List<Change> changes,
-                       List<ItemStackRequestSlotData> touched, List<ItemData> consumedNow) throws Refused {
+    /**
+     * The packets that show the client the crafting table's 3x3 grid, sent as the table
+     * opens - normally empty, unless a screen was closed without a word last time.
+     */
+    public synchronized List<BedrockPacket> tableGridPackets() {
+        List<BedrockPacket> packets = new ArrayList<>();
+        for (int i = 0; i < TABLE_SIZE; i++) {
+            packets.add(uiSlot(TABLE_FIRST_SLOT + i, table[i]));
+        }
+        return packets;
+    }
+
+    private void apply(ItemStackRequestAction action, ItemStackRequestAction[] allActions, int requestId,
+                       boolean creative, List<Change> changes, List<ItemStackRequestSlotData> touched,
+                       List<ItemData> consumedNow) throws Refused {
         if (action instanceof TransferItemStackRequestAction transfer) {
             // Take and Place: moving some or all of a stack, onto nothing or onto the same item.
             transfer(transfer.getCount(), transfer.getSource(), transfer.getDestination(), requestId, changes);
@@ -504,6 +609,19 @@ public class PlayerInventory {
             }
             // Until it lands in a real slot, the client names this stack by the request's id.
             created = withCount(item, item.getCount(), requestId);
+        } else if (action instanceof CraftRecipeAction craft) {
+            Recipes.Recipe recipe = Recipes.get().byNetId(craft.getRecipeNetworkId());
+            if (recipe == null) {
+                throw new Refused("no recipe with network id " + craft.getRecipeNetworkId());
+            }
+            // The craft action comes first, while the grid still holds its ingredients -
+            // so the recipe is checked against it before the consumes take anything out.
+            ItemData[] grid = craftingGrid(allActions);
+            if (!recipe.matches(grid)) {
+                throw new Refused("the grid doesn't hold what " + recipe.id() + " needs");
+            }
+            // Until it lands in a real slot, the client names this stack by the request's id.
+            created = withCount(recipe.result(), recipe.result().getCount(), requestId);
         } else if (action instanceof DestroyAction destroy) {
             if (!creative) {
                 throw new Refused("only creative players can destroy items");
@@ -529,7 +647,8 @@ public class PlayerInventory {
         } else if (action instanceof ConsumeAction consume) {
             Place from = resolve(consume.getSource());
             ItemData item = get(from);
-            if (from.kind() != Kind.CRAFTING && (item.isNull() || Foods.of(item) != null)) {
+            if (from.kind() != Kind.CRAFTING && from.kind() != Kind.TABLE
+                    && (item.isNull() || Foods.of(item) != null)) {
                 // Eating food: the client's consume request and the server's tick race to
                 // finish the meal, and only one of them may take the item out. The client's
                 // prediction may name a stack id the server has never used, so the strict
@@ -562,6 +681,38 @@ public class PlayerInventory {
                 default -> throw new Refused(action.getType() + " isn't supported yet");
             }
         }
+    }
+
+    /**
+     * The grid a craft request works over: the crafting table's 3x3 or the inventory
+     * screen's 2x2, whichever the request's consume actions take their ingredients from.
+     * Crafting from both grids in one request, or from an empty one, is refused.
+     */
+    private ItemData[] craftingGrid(ItemStackRequestAction[] actions) throws Refused {
+        boolean tableGrid = false;
+        boolean screenGrid = false;
+        for (ItemStackRequestAction action : actions) {
+            if (action instanceof ConsumeAction consume) {
+                Kind kind = resolve(consume.getSource()).kind();
+                if (kind == Kind.TABLE) {
+                    tableGrid = true;
+                } else if (kind == Kind.CRAFTING) {
+                    screenGrid = true;
+                }
+            }
+        }
+        if (tableGrid && screenGrid) {
+            throw new Refused("crafting from both grids at once");
+        }
+        ItemData[] grid = tableGrid ? table : crafting;
+        boolean empty = true;
+        for (ItemData item : grid) {
+            empty &= item.isNull();
+        }
+        if (empty) {
+            throw new Refused("nothing in the grid to craft from");
+        }
+        return grid;
     }
 
     private void transfer(int count, ItemStackRequestSlotData source, ItemStackRequestSlotData destination,
@@ -650,8 +801,17 @@ public class PlayerInventory {
             case OFFHAND -> index <= 1 ? new Place(Kind.OFFHAND, 0) : null;
             case CURSOR -> index == 0 ? new Place(Kind.CURSOR, 0) : null;
             case CREATED_OUTPUT -> new Place(Kind.CREATED, 0);
-            case CRAFTING_INPUT -> index >= CRAFTING_FIRST_SLOT && index < CRAFTING_FIRST_SLOT + CRAFTING_SIZE
-                    ? new Place(Kind.CRAFTING, index - CRAFTING_FIRST_SLOT) : null;
+            case CRAFTING_INPUT -> {
+                // The inventory screen's 2x2 grid (UI slots 28 to 31), or the crafting
+                // table's 3x3 (32 to 40) - whichever screen is open the client says so.
+                if (index >= CRAFTING_FIRST_SLOT && index < CRAFTING_FIRST_SLOT + CRAFTING_SIZE) {
+                    yield new Place(Kind.CRAFTING, index - CRAFTING_FIRST_SLOT);
+                }
+                if (index >= TABLE_FIRST_SLOT && index < TABLE_FIRST_SLOT + TABLE_SIZE) {
+                    yield new Place(Kind.TABLE, index - TABLE_FIRST_SLOT);
+                }
+                yield null;
+            }
             default -> null;
         };
         if (place == null) {
@@ -757,6 +917,7 @@ public class PlayerInventory {
             case OFFHAND -> offhand;
             case CURSOR -> cursor;
             case CRAFTING -> crafting[place.index()];
+            case TABLE -> table[place.index()];
             case CREATED -> created;
         };
     }
@@ -768,6 +929,7 @@ public class PlayerInventory {
             case OFFHAND -> offhand = item;
             case CURSOR -> cursor = item;
             case CRAFTING -> crafting[place.index()] = item;
+            case TABLE -> table[place.index()] = item;
             case CREATED -> created = item;
         }
     }
@@ -829,6 +991,7 @@ public class PlayerInventory {
         private final ItemData[] main = PlayerInventory.this.main.clone();
         private final ItemData[] armor = PlayerInventory.this.armor.clone();
         private final ItemData[] crafting = PlayerInventory.this.crafting.clone();
+        private final ItemData[] table = PlayerInventory.this.table.clone();
         private final ItemData offhand = PlayerInventory.this.offhand;
         private final ItemData cursor = PlayerInventory.this.cursor;
         private final int droppedCount = PlayerInventory.this.dropped.size();
@@ -839,6 +1002,7 @@ public class PlayerInventory {
             PlayerInventory.this.main = main;
             PlayerInventory.this.armor = armor;
             PlayerInventory.this.crafting = crafting;
+            PlayerInventory.this.table = table;
             PlayerInventory.this.offhand = offhand;
             PlayerInventory.this.cursor = cursor;
         }

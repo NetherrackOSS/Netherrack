@@ -2,13 +2,13 @@
 
 To download and install Netherrack, head to the [Releases](https://github.com/NetherrackOSS/Netherrack/releases) page for the GitHub repository, download the latest JAR file, move the JAR file to another directory (example: ``netherrack-server``), then launch it via:
 
-```
-java -jar netherrack-0.1.0-alpha.jar
+```bash
+java -jar netherrack.jar
 ```
 
 You can also launch Netherrack via a ``start.sh``, ``start.bat``, or a ``start.cmd`` script.
 
-After running ``java -jar netherrack-0.1.0-alpha.jar`` or launching it via a start script for the first time, you should see something like this:
+After running ``java -jar netherrack.jar`` or launching it via a start script for the first time, you should see something like this:
 
 ```
 [16:01:07] [main] [INFO] Starting Netherrack server version 0.1.0-alpha

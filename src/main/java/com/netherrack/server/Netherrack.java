@@ -10,6 +10,7 @@ import com.netherrack.server.command.HelpCommand;
 import com.netherrack.server.command.KillCommand;
 import com.netherrack.server.command.OpCommand;
 import com.netherrack.server.command.StopCommand;
+import com.netherrack.server.crafting.Recipes;
 import com.netherrack.server.command.TpCommand;
 import com.netherrack.server.command.VersionCommand;
 import com.netherrack.server.entity.ItemEntities;
@@ -209,6 +210,9 @@ public class Netherrack {
         Logger.info(lang.get("server.opening", ip, port));
         itemEntities = new ItemEntities(world, playerManager);
         chunkViews = new ChunkViews(world);
+        // The recipes load now rather than at a first player's join, so nobody waits for
+        // the file's parsing, and the operator sees the count before anyone connects.
+        Recipes.get();
         tripwires = new TripwireSensor(world, playerManager);
         startTicking();
         netherNetServer.start(world, playerManager, this);

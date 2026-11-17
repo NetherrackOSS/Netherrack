@@ -4,6 +4,7 @@ import com.netherrack.server.Netherrack;
 import com.netherrack.server.block.Block;
 import com.netherrack.server.command.AvailableCommands;
 import com.netherrack.server.command.PlayerCommandSender;
+import com.netherrack.server.crafting.Recipes;
 import com.netherrack.server.entity.EntityIds;
 import com.netherrack.server.entity.ItemEntities;
 import com.netherrack.server.player.Foods;
@@ -63,7 +64,7 @@ import org.cloudburstmc.protocol.bedrock.packet.BedrockPacketHandler;
 import org.cloudburstmc.protocol.bedrock.packet.BiomeDefinitionListPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ChunkRadiusUpdatedPacket;
 import org.cloudburstmc.protocol.bedrock.packet.CommandRequestPacket;
-import org.cloudburstmc.protocol.bedrock.packet.CraftingDataPacket;
+
 import org.cloudburstmc.protocol.bedrock.packet.CreativeContentPacket;
 import org.cloudburstmc.protocol.bedrock.packet.DimensionDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ContainerClosePacket;
@@ -311,7 +312,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
                 skin, deviceId, buildPlatform, spawnPosition, gameMode);
         // Health, hunger and what wears them down. A returning player gets their saved
         // numbers back; a new one starts full.
-        PlayerSurvival survival = new PlayerSurvival(player, players);
+        PlayerSurvival survival = new PlayerSurvival(player, players, itemEntities);
         player.setSurvival(survival);
         if (saved != null) {
             survival.restore(saved.stats());
@@ -690,6 +691,12 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             if (survival != null) {
                 survival.releaseItem();
             }
+        } else if (packet.getTransactionType() == InventoryTransactionType.ITEM_USE_ON_ENTITY) {
+            // A click on another entity: players are the only ones there are, so this is
+            // PvP. Action type 0 is a right click on them, which nothing uses yet.
+            if (packet.getActionType() == 1) {
+                handleAttack(packet);
+            }
         } else if (packet.getTransactionType() == InventoryTransactionType.INVENTORY_MISMATCH) {
             // The client says its inventory no longer matches the server's, so it's shown
             // the inventory as the server has it - the mismatch is over with the resync.
@@ -716,6 +723,26 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
      * as vanilla does. Using food on air starts eating; the server tick finishes it after
      * 1.6s and takes the item then, as vanilla does. Returns whether the inventory changed.
      */
+    /**
+     * One player attacking another: the transaction names the target by runtime entity id
+     * and the hotbar slot that swung. The server reads what they held from its own
+     * inventory rather than trusting the item the client says was in their hand.
+     */
+    private void handleAttack(InventoryTransactionPacket packet) {
+        PlayerSurvival survival = player.getSurvival();
+        if (survival == null) {
+            return;
+        }
+        Player target = players.byEntityId(packet.getRuntimeEntityId());
+        if (target == null) {
+            return; // players are the only entities, so nothing else is there to hit
+        }
+        int slot = packet.getHotbarSlot();
+        ItemData held = slot >= 0 && slot < PlayerInventory.HOTBAR_SIZE
+                ? player.getInventory().get(slot) : ItemData.AIR;
+        survival.attack(target, held);
+    }
+
     private boolean processItemUse(UseAction use) {
         if (use.actionType() != 0 && use.actionType() != 1) {
             return false;
@@ -847,11 +874,13 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
     /**
      * The client opening its own inventory screen. It shows the screen only once the
-     * server answers with ContainerOpen, which vanilla places at the player's feet.
+     * server answers with ContainerOpen, which vanilla places at the player's feet. With
+     * a crafting table open its screen is the inventory already, so this does nothing.
      */
     @Override
     public PacketSignal handle(InteractPacket packet) {
-        if (player == null || packet.getAction() != InteractPacket.Action.OPEN_INVENTORY || inventoryOpen) {
+        if (player == null || packet.getAction() != InteractPacket.Action.OPEN_INVENTORY || inventoryOpen
+                || player.getInventory().isTableOpen()) {
             return PacketSignal.HANDLED;
         }
         inventoryOpen = true;
@@ -866,8 +895,10 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
     }
 
     /**
-     * The client closing a screen. The server confirms it, and for the inventory screen
-     * puts what was left on the cursor and in the crafting grid back into the inventory.
+     * The client closing a screen. The server confirms it, and puts what was left on the
+     * cursor or in the crafting grid back into the inventory: window 0 is the inventory
+     * screen, window -1 the crafting table's (as Nukkit opens it, "no container" - the
+     * workbench is the player's UI screen with a bigger grid).
      */
     @Override
     public PacketSignal handle(ContainerClosePacket packet) {
@@ -882,7 +913,25 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         close.setServerInitiated(false);
         session.sendPacket(close);
 
-        if (packet.getId() == 0 && player.getInventory().returnScreenItems()) {
+        PlayerInventory inventory = player.getInventory();
+        boolean returned;
+        if (packet.getId() == -1) {
+            returned = inventory.closeTable();
+        } else if (packet.getId() == 0) {
+            returned = inventory.returnScreenItems();
+            // Clients have been known to close a screen by another's window id (Nukkit
+            // works around the same); a table still open after this comes down too, its
+            // leftovers already back with the rest.
+            if (inventory.isTableOpen()) {
+                inventory.closeTable();
+            }
+        } else if (inventory.isTableOpen()) {
+            // Some other window id, but a table may be the screen that's closing.
+            returned = inventory.closeTable();
+        } else {
+            returned = false;
+        }
+        if (returned) {
             sendInventory();
             throwDroppedItems();
         }
@@ -933,6 +982,10 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         player.setLocation(respawn, player.getRotation());
         chunkView.moveTo(respawn);
 
+        // The corpse the others were shown was removed when the player died; they're
+        // alive again, so show the reborn player to whoever can see them at the spawn.
+        players.updateVisibility();
+
         MovePlayerPacket teleport = new MovePlayerPacket();
         teleport.setRuntimeEntityId(runtimeEntityId);
         teleport.setPosition(respawn);
@@ -944,6 +997,9 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         session.sendPacket(teleport);
 
         sendInventory();
+        // What they wore dropped where they died, so everyone who can see them now sees
+        // them without armor.
+        players.broadcastArmor(player);
         players.broadcastMovement(player, true, 0);
         return PacketSignal.HANDLED;
     }
@@ -1187,10 +1243,10 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         creative.getContents().addAll(vanillaData.getCreativeItems());
         session.sendPacket(creative);
 
-        // cleanRecipes left false (the default) deliberately - true would clear the
-        // client's own built-in vanilla recipes, and we have nothing to replace them with
-        // yet, which would leave the player unable to craft anything at all.
-        session.sendPacket(new CraftingDataPacket());
+        // The recipes packet carries cleanRecipes, so the client drops its built-in copy
+        // of vanilla's recipes for the server's own - two lists numbered from 1 would
+        // collide on every network id. Armor trims stay empty for now.
+        session.sendPacket(Recipes.get().packet());
 
         session.sendPacket(new TrimDataPacket());
     }

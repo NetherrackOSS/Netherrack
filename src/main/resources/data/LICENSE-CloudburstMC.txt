@@ -1,3 +1,11 @@
+The files below come from CloudburstMC's repositories (https://github.com/CloudburstMC)
+and are used under the Apache License 2.0 printed beneath.
+
+- recipes.json — from CloudburstMC/Data (the crafting recipes, for protocol 2225)
+- The other bundled files (block palette, item definitions, creative contents, biomes,
+  entity identifiers) were extracted with the tools in CloudburstMC's Protocol and Data
+  repositories.
+
                                  Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/

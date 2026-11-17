@@ -8,6 +8,7 @@ import com.netherrack.server.block.BlockPlacement;
 import com.netherrack.server.block.BlockShapes;
 import com.netherrack.server.block.BlockUse;
 import com.netherrack.server.block.Blocks;
+import com.netherrack.server.block.CraftingTable;
 import com.netherrack.server.block.Face;
 import com.netherrack.server.block.Placer;
 import com.netherrack.server.entity.ItemEntities;
@@ -190,6 +191,11 @@ public class BlockInteraction {
             }
         }
         if (!player.isSneaking() && BlockUse.opensOnClick(clickedBlock)) {
+            // A crafting table does what it's for: its screen opens, with the same checks
+            // as any used block. Everything else that opens a screen isn't done yet.
+            if (mayUse && withinReach(player, clicked) && CraftingTable.opens(clickedBlock)) {
+                CraftingTable.open(player, clicked);
+            }
             undo(player, slot, target, clicked);
             return true; // what clicking it opens isn't done yet, but it never places anything
         }

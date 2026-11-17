@@ -1,9 +1,10 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset=".github/logo-dark.png">
-    <source media="(prefers-color-scheme: light)" srcset=".github/logo-light.png">
-    <img alt="Netherrack Logo" src=".github/logo-light.png" width="75%">
-  </picture>
+  <a href="https://netherrackoss.github.io">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset=".github/logo-dark.png">
+      <source media="(prefers-color-scheme: light)" srcset=".github/logo-light.png">
+      <img alt="Netherrack Logo" src=".github/logo-light.png" width="75%">
+    </picture>
 </p>
 
 <p align="center"><b>Open source server software for Minecraft: Bedrock Edition written in Java</b></p>
