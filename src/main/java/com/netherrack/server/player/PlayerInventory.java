@@ -288,6 +288,7 @@ public class PlayerInventory {
     /**
      * Empties the whole inventory, as a player's death does: everything they carry - the
      * main slots, armor and offhand - plus whatever was on the cursor or in a crafting
+     * main slots, armor and offhand - plus whatever was on the cursor or in the crafting
      * grid, which would otherwise have gone back into the inventory when their screen
      * closed. Returns what was in it.
      */
