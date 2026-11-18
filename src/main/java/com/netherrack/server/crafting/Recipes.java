@@ -4,16 +4,23 @@ import com.netherrack.server.network.VanillaData;
 import com.netherrack.server.util.Logger;
 import org.cloudburstmc.nbt.NbtMap;
 import org.cloudburstmc.nbt.NbtUtils;
+import org.cloudburstmc.protocol.bedrock.data.TrimMaterial;
+import org.cloudburstmc.protocol.bedrock.data.TrimPattern;
 import org.cloudburstmc.protocol.bedrock.data.definitions.ItemDefinition;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.crafting.CraftingDataType;
 import org.cloudburstmc.protocol.bedrock.data.inventory.crafting.RecipeUnlockingRequirement;
-import org.cloudburstmc.protocol.bedrock.data.inventory.crafting.recipe.RecipeData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.crafting.recipe.MultiRecipeData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.crafting.recipe.ShapedRecipeData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.crafting.recipe.ShapelessRecipeData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.crafting.recipe.SmithingTransformRecipeData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.crafting.recipe.SmithingTrimRecipeData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.descriptor.DefaultDescriptor;
 import org.cloudburstmc.protocol.bedrock.data.inventory.descriptor.ItemDescriptorWithCount;
 import org.cloudburstmc.protocol.bedrock.data.inventory.descriptor.ItemTagDescriptor;
 import org.cloudburstmc.protocol.bedrock.packet.CraftingDataPacket;
+import org.cloudburstmc.protocol.bedrock.packet.TrimDataPacket;
+import org.cloudburstmc.protocol.bedrock.packet.UnlockedRecipesPacket;
 import org.jose4j.json.JsonUtil;
 import org.jose4j.lang.JoseException;
 
@@ -23,24 +30,31 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
  * The crafting recipes, taken as they are from CloudburstMC's data repository
  * (https://github.com/CloudburstMC/Data, bundled as /data/recipes.json for this same
- * protocol version): every recipe a crafting table or the inventory screen's 2x2 grid can
- * make, each shaped (a pattern of item letters) or shapeless (a pinch of ingredients).
+ * protocol version): every recipe the game knows at this version - the crafting table's
+ * and the inventory screen's, but also the furnace, campfire, stonecutter, cartography
+ * and smithing ones the other screens use, and the built-in multi recipes like map
+ * cloning. The whole set goes out, because the client builds every screen's recipe list
+ * from this one packet: with cleanRecipes it has dropped its own built-in copy, and a
+ * partial set leaves the missing sections with nothing at all (the client chokes on a
+ * world without furnace recipes, for one).
  * <p>
- * The packet lists them all for the client, whose recipe book, output prediction and
- * auto-fill are its own work; the server's job is only to make sure a craft really did
- * happen over a grid that holds what the recipe needs - the request names the recipe by
- * network id, the client's own, per-recipe number the packet assigns.
+ * Only the crafting-table recipes are carried further than the packet: when the client
+ * asks to craft, it names the recipe by network id and the server makes sure the grid
+ * really holds what that recipe needs. The rest ride along for their screens, which
+ * Netherrack doesn't have yet.
  * <p>
- * Only recipes a crafting table makes are kept: the furnace, stonecutter and smithing
- * recipes in the file belong to screens Netherrack doesn't have yet.
+ * The recipes are numbered from 1 in file order; the ids need only be unique per packet,
+ * which is exactly how every other server software numbers them.
  */
 public final class Recipes {
 
@@ -48,6 +62,12 @@ public final class Recipes {
 
     /** A damage value that means "any of this item, however it's colored or charged". */
     private static final int ANY_AUX = 32767;
+
+    /** What the wire calls that same "any damage" wildcard - a negative aux value. */
+    private static final int WIRE_ANY_AUX = -1;
+
+    /** The tag the smithing recipes carry, as the bundled file has it in their block field. */
+    private static final String SMITHING_TABLE = "smithing_table";
 
     /**
      * The vanilla item tags the recipes name as ingredients, with what each holds, as
@@ -122,6 +142,7 @@ public final class Recipes {
 
     private final Map<Integer, Recipe> byNetId = new HashMap<>();
     private final CraftingDataPacket packet = new CraftingDataPacket();
+    private final List<String> unlockedIds = new ArrayList<>();
 
     public static Recipes get() {
         Recipes result = instance;
@@ -141,6 +162,55 @@ public final class Recipes {
         return packet;
     }
 
+    /**
+     * The packet that marks every recipe unlocked from the start, sent right after the
+     * recipes packet. The client keeps track of recipe unlocks itself and weighs each
+     * recipe's unlocking requirement against the player's inventory, so a server that
+     * says nothing about it leaves the client churning through the whole book on every
+     * inventory change. Handing out the whole list at once is what Geyser does, and it
+     * keeps an empty list from ever reaching the client, which older versions choke on.
+     * The multi recipes carry no id and are always unlocked, so they aren't listed.
+     */
+    public UnlockedRecipesPacket unlockedPacket() {
+        UnlockedRecipesPacket unlocked = new UnlockedRecipesPacket();
+        unlocked.setAction(UnlockedRecipesPacket.ActionType.INITIALLY_UNLOCKED);
+        unlocked.getUnlockedRecipes().addAll(unlockedIds);
+        return unlocked;
+    }
+
+    /**
+     * The smithing screen's registry of armor trims, which must reach the client before
+     * the recipes packet: the client resolves the trim recipe's item tags against these
+     * lists as it builds its recipe book, and an empty registry at that moment is one of
+     * the things it rejects the whole join over. The values are the ones BDS itself sends
+     * at this version, pattern and material by pattern and material, in the order it
+     * sends them.
+     */
+    public TrimDataPacket trimPacket() {
+        TrimDataPacket trims = new TrimDataPacket();
+        String[] patterns = {"ward", "sentry", "snout", "dune", "spire", "tide", "wild", "rib",
+                "coast", "shaper", "eye", "vex", "silence", "wayfinder", "raiser", "host",
+                "flow", "bolt"};
+        for (String pattern : patterns) {
+            trims.getPatterns().add(new TrimPattern(
+                    "minecraft:" + pattern + "_armor_trim_smithing_template", pattern));
+        }
+        // The colors are the Bedrock format codes the game's trim palette uses, as BDS
+        // carries them - they tint the trim in tooltips, nothing else.
+        trims.getMaterials().add(new TrimMaterial("quartz", "§h", "minecraft:quartz"));
+        trims.getMaterials().add(new TrimMaterial("iron", "§i", "minecraft:iron_ingot"));
+        trims.getMaterials().add(new TrimMaterial("netherite", "§j", "minecraft:netherite_ingot"));
+        trims.getMaterials().add(new TrimMaterial("redstone", "§m", "minecraft:redstone"));
+        trims.getMaterials().add(new TrimMaterial("copper", "§n", "minecraft:copper_ingot"));
+        trims.getMaterials().add(new TrimMaterial("gold", "§p", "minecraft:gold_ingot"));
+        trims.getMaterials().add(new TrimMaterial("emerald", "§q", "minecraft:emerald"));
+        trims.getMaterials().add(new TrimMaterial("diamond", "§s", "minecraft:diamond"));
+        trims.getMaterials().add(new TrimMaterial("lapis", "§t", "minecraft:lapis_lazuli"));
+        trims.getMaterials().add(new TrimMaterial("amethyst", "§u", "minecraft:amethyst_shard"));
+        trims.getMaterials().add(new TrimMaterial("resin", "§v", "minecraft:resin_brick"));
+        return trims;
+    }
+
     /** The recipe a craft request names by network id, or null if there is no such recipe. */
     public Recipe byNetId(int netId) {
         return byNetId.get(netId);
@@ -150,7 +220,11 @@ public final class Recipes {
         long start = System.currentTimeMillis();
         int shaped = 0;
         int shapeless = 0;
+        int containers = 0;
+        int multi = 0;
+        int smithing = 0;
         int skipped = 0;
+        Set<String> usedIds = new HashSet<>();
 
         Map<String, Object> root;
         try {
@@ -158,38 +232,58 @@ public final class Recipes {
         } catch (JoseException e) {
             throw new IllegalStateException("Failed to parse " + RESOURCE, e);
         }
+        // Recipes are numbered from 1, in file order. The file's own "type" numbers are
+        // the CraftingDataType ordinals, which is also the list each kind goes out in:
+        // shaped, shapeless, multi, container-preserving shapeless, and the two smithing
+        // kinds. The furnace, campfire, stonecutter and cartography recipes ride in the
+        // shapeless list, tagged by the crafting block they belong to.
+        int netId = 0;
         for (Object object : (List<?>) root.get("recipes")) {
             Map<String, Object> entry = cast(object);
             int type = ((Number) entry.get("type")).intValue();
-            String block = (String) entry.get("block");
-            // The crafting_table ones are the ordinary recipes; the deprecated ones carry
-            // recipes nothing else lists (the barrel, for one) and are just as valid.
-            if ((type != 0 && type != 1)
-                    || (!"crafting_table".equals(block) && !"deprecated".equals(block))) {
-                continue;
-            }
-
-            Recipe recipe = type == 1 ? shapedRecipe(entry) : shapelessRecipe(entry);
-            if (recipe == null) {
+            netId++;
+            if (type == CraftingDataType.SHAPED.ordinal()) {
+                if (shaped(entry, netId)) {
+                    shaped++;
+                } else {
+                    skipped++;
+                }
+            } else if (type == CraftingDataType.SHAPELESS.ordinal()) {
+                if (shapeless(entry, netId)) {
+                    shapeless++;
+                } else {
+                    skipped++;
+                }
+            } else if (type == CraftingDataType.SHULKER_BOX.ordinal()) {
+                if (container(entry, netId)) {
+                    containers++;
+                } else {
+                    skipped++;
+                }
+            } else if (type == CraftingDataType.MULTI.ordinal()) {
+                packet.getMultiData().add(MultiRecipeData.of(
+                        UUID.fromString((String) entry.get("uuid")), netId));
+                multi++;
+            } else if (type == CraftingDataType.SMITHING_TRANSFORM.ordinal()) {
+                if (smithingTransform(entry, netId, usedIds)) {
+                    smithing++;
+                } else {
+                    skipped++;
+                }
+            } else if (type == CraftingDataType.SMITHING_TRIM.ordinal()) {
+                if (smithingTrim(entry, netId, usedIds)) {
+                    smithing++;
+                } else {
+                    skipped++;
+                }
+            } else {
                 skipped++;
-                continue;
-            }
-            byNetId.put(recipe.netId(), recipe);
-            // The packet carries shaped and shapeless recipes in separate lists - the
-            // client reads them apart, not as one.
-            if (recipe instanceof Shaped shapedRecipe) {
-                packet.getShapedData().add((ShapedRecipeData) shapedRecipe.wire());
-            } else {
-                packet.getShapelessData().add((ShapelessRecipeData) ((Shapeless) recipe).wire());
-            }
-            if (recipe instanceof Shaped) {
-                shaped++;
-            } else {
-                shapeless++;
             }
         }
-        Logger.info("Loaded " + shaped + " shaped and " + shapeless + " shapeless crafting recipes"
-                + (skipped > 0 ? " (" + skipped + " skipped, for items this version doesn't have)" : "")
+        Logger.info("Loaded " + (shaped + shapeless + containers + multi + smithing) + " crafting recipes ("
+                + shaped + " shaped, " + shapeless + " shapeless, " + containers + " container-preserving, "
+                + multi + " multi, " + smithing + " smithing)"
+                + (skipped > 0 ? ", " + skipped + " skipped, for items this version doesn't have" : "")
                 + " in " + (System.currentTimeMillis() - start) + "ms");
         // The client has its own built-in copy of vanilla's recipes, numbered from 1 just
         // like these are. Left alone, the two lists merge and every network id collides -
@@ -198,63 +292,212 @@ public final class Recipes {
         packet.setCleanRecipes(true);
     }
 
-    private String read() {
-        try (InputStream in = Recipes.class.getResourceAsStream(RESOURCE)) {
-            if (in == null) {
-                throw new IllegalStateException("Missing bundled resource: " + RESOURCE);
-            }
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to read " + RESOURCE, e);
-        }
-    }
-
-    private Recipe shapedRecipe(Map<String, Object> entry) {
+    /** A shaped recipe: the pattern in the file, both as the packet carries it and as the server checks it. */
+    private boolean shaped(Map<String, Object> entry, int netId) {
         String id = (String) entry.get("id");
         ItemData result = result(entry);
         if (result == null) {
-            return null;
+            return false;
         }
         List<String> shape = (List<String>) entry.get("shape");
         int height = shape.size();
         int width = shape.get(0).length();
+
+        // The pattern flattened row by row, an empty descriptor where the shape has a space.
+        List<ItemDescriptorWithCount> ingredients = new ArrayList<>();
         Map<String, Ingredient> keys = new LinkedHashMap<>();
         for (Map.Entry<String, Object> letter : cast(entry.get("input")).entrySet()) {
             Ingredient ingredient = ingredient(cast(letter.getValue()));
             if (ingredient == null) {
-                return null; // an ingredient no item of this version matches
+                return false; // an ingredient no item of this version matches
             }
             keys.put(letter.getKey(), ingredient);
         }
-
-        // The pattern flattened row by row, a null cell where the shape has a space.
-        Ingredient[] cells = new Ingredient[width * height];
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 char letter = shape.get(y).charAt(x);
-                if (letter != ' ') {
-                    cells[y * width + x] = keys.get(String.valueOf(letter));
-                }
+                ingredients.add(letter == ' ' ? ItemDescriptorWithCount.EMPTY : keys.get(String.valueOf(letter)).wire());
             }
         }
-        return new Shaped(byNetId.size() + 1, id, width, height, cells, result, priority(entry));
+
+        Recipe server = null;
+        String block = (String) entry.get("block");
+        if ("crafting_table".equals(block) || "deprecated".equals(block)) {
+            // The crafting_table ones are the ordinary recipes; the deprecated ones carry
+            // recipes nothing else lists (the barrel, for one) and are just as valid. Only
+            // these can be asked for over a grid, so only these get a server-side check.
+            Ingredient[] cells = new Ingredient[width * height];
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    char letter = shape.get(y).charAt(x);
+                    if (letter != ' ') {
+                        cells[y * width + x] = keys.get(String.valueOf(letter));
+                    }
+                }
+            }
+            server = new Shaped(netId, id, width, height, cells, result);
+            byNetId.put(netId, server);
+        }
+        packet.getShapedData().add(ShapedRecipeData.shaped(id, width, height, ingredients, List.of(result),
+                uuid(id), block, priority(entry), netId, true, RecipeUnlockingRequirement.INVALID));
+        unlockedIds.add(id);
+        return true;
     }
 
-    private Recipe shapelessRecipe(Map<String, Object> entry) {
+    /** A shapeless recipe: a pinch of ingredients in any arrangement. */
+    private boolean shapeless(Map<String, Object> entry, int netId) {
         String id = (String) entry.get("id");
         ItemData result = result(entry);
         if (result == null) {
+            return false;
+        }
+        List<ItemDescriptorWithCount> descriptors = new ArrayList<>();
+        for (Object object : (List<?>) entry.get("input")) {
+            ItemDescriptorWithCount descriptor = descriptor(cast(object));
+            if (descriptor == null) {
+                return false; // an ingredient no item of this version matches
+            }
+            descriptors.add(descriptor);
+        }
+
+        String block = (String) entry.get("block");
+        if ("crafting_table".equals(block) || "deprecated".equals(block)) {
+            // Only crafting-table recipes can be asked for over a grid; the furnace,
+            // campfire, stonecutter and cartography ones ride along for their screens.
+            List<Ingredient> ingredients = new ArrayList<>();
+            for (Object object : (List<?>) entry.get("input")) {
+                Ingredient ingredient = ingredient(cast(object));
+                if (ingredient == null) {
+                    return false;
+                }
+                ingredients.add(ingredient);
+            }
+            byNetId.put(netId, new Shapeless(netId, id, ingredients, result));
+        }
+        packet.getShapelessData().add(ShapelessRecipeData.shapeless(id, descriptors, List.of(result),
+                uuid(id), block, priority(entry), netId, RecipeUnlockingRequirement.INVALID));
+        unlockedIds.add(id);
+        return true;
+    }
+
+    /**
+     * A container-preserving shapeless recipe: a shapeless recipe that carries whatever
+     * was inside the item it remakes (dyeing a bundle keeps its contents), sent in the
+     * packet's user-data list. The client only uses them over screens Netherrack doesn't
+     * have, so they go out for the book and nothing checks them server-side.
+     */
+    private boolean container(Map<String, Object> entry, int netId) {
+        String id = (String) entry.get("id");
+        ItemData result = result(entry);
+        if (result == null) {
+            return false;
+        }
+        List<ItemDescriptorWithCount> descriptors = new ArrayList<>();
+        for (Object object : (List<?>) entry.get("input")) {
+            ItemDescriptorWithCount descriptor = descriptor(cast(object));
+            if (descriptor == null) {
+                return false;
+            }
+            descriptors.add(descriptor);
+        }
+        packet.getShapelessUserData().add(ShapelessRecipeData.shulkerBox(id, descriptors, List.of(result),
+                uuid(id), (String) entry.get("block"), priority(entry), netId));
+        unlockedIds.add(id);
+        return true;
+    }
+
+    /**
+     * A smithing-table upgrade: template, base item and material in, the upgraded item
+     * out. The bundled file leaves these unnamed, so they get one from what they make -
+     * the name only has to be unique within the packet.
+     */
+    private boolean smithingTransform(Map<String, Object> entry, int netId, Set<String> usedIds) {
+        Map<String, Object> input = cast(entry.get("input"));
+        ItemDescriptorWithCount template = descriptor(cast(input.get("template")));
+        ItemDescriptorWithCount base = descriptor(cast(input.get("base")));
+        ItemDescriptorWithCount addition = descriptor(cast(input.get("addition")));
+        ItemData result = output(entry);
+        if (template == null || base == null || addition == null || result == null) {
+            return false;
+        }
+        String id = uniqueId("minecraft:smithing_netherite_" + smithingBaseName(name(base)), usedIds);
+        packet.getSmithingTransformData().add(SmithingTransformRecipeData.of(id, template, base, addition,
+                result, (String) entry.get("block"), netId));
+        unlockedIds.add(id);
+        return true;
+    }
+
+    /**
+     * A smithing-table armor trim: template, armor and trim material in, no item out. The
+     * bundled file leaves these unnamed, so they get the id BDS itself sends. The data
+     * class's factory takes base, addition, template in that order even though the wire
+     * carries template first - the order of the arguments below is what lands on the wire.
+     */
+    private boolean smithingTrim(Map<String, Object> entry, int netId, Set<String> usedIds) {
+        Map<String, Object> input = cast(entry.get("input"));
+        ItemDescriptorWithCount template = descriptor(cast(input.get("template")));
+        ItemDescriptorWithCount base = descriptor(cast(input.get("base")));
+        ItemDescriptorWithCount addition = descriptor(cast(input.get("addition")));
+        if (template == null || base == null || addition == null) {
+            return false;
+        }
+        // The client rejects a smithing trim recipe whose trim registry is empty, so the
+        // trim data packet is sent first (see trimPacket). The id is the one BDS itself
+        // sends, from its dumped wire data; the bundled file leaves it unnamed.
+        String id = uniqueId("minecraft:smithing_armor_trim", usedIds);
+        packet.getSmithingTrimData().add(SmithingTrimRecipeData.of(id, base, addition, template,
+                (String) entry.get("block"), netId));
+        unlockedIds.add(id);
+        return true;
+    }
+
+    /**
+     * The wire descriptor for one raw ingredient: the item tag it names, or the item
+     * itself with its damage value - where the file's "any damage" marker becomes the
+     * negative aux value the wire uses for it. Null if this version doesn't have the item.
+     */
+    private ItemDescriptorWithCount descriptor(Map<String, Object> raw) {
+        String tag = (String) raw.get("itemTag");
+        if (tag != null) {
+            return new ItemDescriptorWithCount(new ItemTagDescriptor(tag), 1);
+        }
+        ItemDefinition definition = definition((String) raw.get("id"));
+        if (definition == null) {
             return null;
         }
-        List<Ingredient> ingredients = new ArrayList<>();
-        for (Object object : (List<?>) entry.get("input")) {
-            Ingredient ingredient = ingredient(cast(object));
-            if (ingredient == null) {
-                return null; // an ingredient no item of this version matches
-            }
-            ingredients.add(ingredient);
+        int aux = ((Number) raw.getOrDefault("auxValue", 0)).intValue();
+        return new ItemDescriptorWithCount(new DefaultDescriptor(definition, wireAux(aux), ""), 1);
+    }
+
+    private static int wireAux(int aux) {
+        return aux == ANY_AUX ? WIRE_ANY_AUX : aux;
+    }
+
+    private static String name(ItemDescriptorWithCount descriptor) {
+        return descriptor.getDescriptor() instanceof DefaultDescriptor defaultDescriptor
+                ? defaultDescriptor.getItemId().getIdentifier().replaceFirst("minecraft:", "")
+                : "unknown";
+    }
+
+    /**
+     * The recipe-id tail for a smithing upgrade's base item: BDS names them after what is
+     * being upgraded, without the diamond it starts from - a diamond axe becomes
+     * "minecraft:smithing_netherite_axe". Anything else keeps its whole name.
+     */
+    private static String smithingBaseName(String base) {
+        return base.startsWith("diamond_") ? base.substring("diamond_".length()) : base;
+    }
+
+    private static String uniqueId(String base, Set<String> usedIds) {
+        String id = base;
+        for (int suffix = 2; !usedIds.add(id); suffix++) {
+            id = base + "_" + suffix;
         }
-        return new Shapeless(byNetId.size() + 1, id, ingredients, result, priority(entry));
+        return id;
+    }
+
+    private static UUID uuid(String id) {
+        return UUID.nameUUIDFromBytes(id.getBytes(StandardCharsets.UTF_8));
     }
 
     /** An ingredient: the items that satisfy it, whether by tag or by name, and the damage value wanted. */
@@ -281,7 +524,17 @@ public final class Recipes {
 
     /** What the recipe makes: the item named, with its count, color or tag, or null if this version doesn't have it. */
     private ItemData result(Map<String, Object> entry) {
-        Map<String, Object> raw = cast(((List<?>) entry.get("output")).get(0));
+        return resultItem(cast(((List<?>) entry.get("output")).get(0)));
+    }
+
+    /** What a recipe makes, from an output that may be a single entry or a one-entry list. */
+    private ItemData output(Map<String, Object> entry) {
+        Object raw = entry.get("output");
+        return resultItem(cast(raw instanceof List<?> list ? list.get(0) : raw));
+    }
+
+    /** One raw output entry as an item, or null if this version doesn't have it. */
+    private ItemData resultItem(Map<String, Object> raw) {
         ItemData item = VanillaData.get().item((String) raw.get("id"),
                 ((Number) raw.getOrDefault("count", 1)).intValue());
         if (item.isNull()) {
@@ -309,6 +562,17 @@ public final class Recipes {
         } catch (Exception e) {
             Logger.warn("A recipe's saved item tag couldn't be read, so it's plain: " + e);
             return null;
+        }
+    }
+
+    private String read() {
+        try (InputStream in = Recipes.class.getResourceAsStream(RESOURCE)) {
+            if (in == null) {
+                throw new IllegalStateException("Missing bundled resource: " + RESOURCE);
+            }
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to read " + RESOURCE, e);
         }
     }
 
@@ -357,9 +621,6 @@ public final class Recipes {
 
         /** Whether a crafting grid (4 slots for the 2x2, 9 for the 3x3) holds exactly this recipe. */
         public abstract boolean matches(ItemData[] grid);
-
-        /** The recipe as the CraftingDataPacket carries it, for the client's recipe book. */
-        abstract RecipeData wire();
     }
 
     /** A shaped recipe: a pattern of ingredients, row by row, with empty cells where the shape has spaces. */
@@ -368,14 +629,12 @@ public final class Recipes {
         private final int width;
         private final int height;
         private final Ingredient[] cells;
-        private final int priority;
 
-        Shaped(int netId, String id, int width, int height, Ingredient[] cells, ItemData result, int priority) {
+        Shaped(int netId, String id, int width, int height, Ingredient[] cells, ItemData result) {
             super(netId, id, result);
             this.width = width;
             this.height = height;
             this.cells = cells;
-            this.priority = priority;
         }
 
         @Override
@@ -414,29 +673,16 @@ public final class Recipes {
             }
             return true;
         }
-
-        @Override
-        RecipeData wire() {
-            List<ItemDescriptorWithCount> ingredients = new ArrayList<>();
-            for (Ingredient cell : cells) {
-                ingredients.add(cell == null ? ItemDescriptorWithCount.EMPTY : cell.wire());
-            }
-            return ShapedRecipeData.shaped(id(), width, height, ingredients, List.of(result()),
-                    UUID.nameUUIDFromBytes(id().getBytes(StandardCharsets.UTF_8)), "crafting_table",
-                    priority, netId(), true, RecipeUnlockingRequirement.INVALID);
-        }
     }
 
     /** A shapeless recipe: a pinch of ingredients in any arrangement. */
     static final class Shapeless extends Recipe {
 
         private final List<Ingredient> ingredients;
-        private final int priority;
 
-        Shapeless(int netId, String id, List<Ingredient> ingredients, ItemData result, int priority) {
+        Shapeless(int netId, String id, List<Ingredient> ingredients, ItemData result) {
             super(netId, id, result);
             this.ingredients = ingredients;
-            this.priority = priority;
         }
 
         @Override
@@ -460,17 +706,6 @@ public final class Recipes {
             }
             return left.isEmpty();
         }
-
-        @Override
-        RecipeData wire() {
-            List<ItemDescriptorWithCount> descriptors = new ArrayList<>();
-            for (Ingredient ingredient : ingredients) {
-                descriptors.add(ingredient.wire());
-            }
-            return ShapelessRecipeData.shapeless(id(), descriptors, List.of(result()),
-                    UUID.nameUUIDFromBytes(id().getBytes(StandardCharsets.UTF_8)), "crafting_table",
-                    priority, netId(), RecipeUnlockingRequirement.INVALID);
-        }
     }
 
     /**
@@ -488,7 +723,7 @@ public final class Recipes {
             if (tag != null) {
                 return new ItemDescriptorWithCount(new ItemTagDescriptor(tag), 1);
             }
-            return new ItemDescriptorWithCount(new DefaultDescriptor(definition(names.get(0)), aux, ""), 1);
+            return new ItemDescriptorWithCount(new DefaultDescriptor(definition(names.get(0)), wireAux(aux), ""), 1);
         }
     }
 }

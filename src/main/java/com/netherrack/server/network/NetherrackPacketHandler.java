@@ -97,7 +97,6 @@ import org.cloudburstmc.protocol.bedrock.packet.SetHealthPacket;
 import org.cloudburstmc.protocol.bedrock.packet.SetLocalPlayerAsInitializedPacket;
 import org.cloudburstmc.protocol.bedrock.packet.StartGamePacket;
 import org.cloudburstmc.protocol.bedrock.packet.TextPacket;
-import org.cloudburstmc.protocol.bedrock.packet.TrimDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.UpdateAttributesPacket;
 import org.cloudburstmc.protocol.bedrock.packet.VoxelShapesPacket;
 import org.cloudburstmc.protocol.bedrock.util.ChainValidationResult;
@@ -119,7 +118,7 @@ import java.util.concurrent.ThreadLocalRandom;
  * RequestNetworkSettings -> NetworkSettings -> Login -> PlayStatus(LOGIN_SUCCESS)
  * -> ResourcePacksInfo -> ResourcePackClientResponse -> ResourcePackStack -> DimensionData
  * -> JigsawStructureData -> VoxelShapes -> StartGame -> BiomeDefinitionList -> AvailableEntityIdentifiers
- * -> ItemComponent -> CreativeContent -> CraftingData -> TrimData
+ * -> ItemComponent -> CreativeContent -> TrimData -> CraftingData -> UnlockedRecipes
  * -> RequestChunkRadius -> ChunkRadiusUpdated -> NetworkChunkPublisherUpdate -> LevelChunk(s)
  * -> PlayStatus(PLAYER_SPAWN) -> SetLocalPlayerAsInitialized
  * <p>
@@ -1245,9 +1244,14 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
         // The recipes packet carries cleanRecipes, so the client drops its built-in copy
         // of vanilla's recipes for the server's own - two lists numbered from 1 would
-        // collide on every network id. Armor trims stay empty for now.
+        // collide on every network id. Right after it, every recipe is marked unlocked:
+        // the client tracks unlocks itself, and a server that says nothing leaves it
+        // weighing the whole book's unlocking requirements on every inventory change.
+        // The trim registry goes out before the recipes: the client resolves the smithing
+        // trim recipe's item tags against it while it builds its recipe book, and rejects
+        // the join over an empty registry at that moment.
+        session.sendPacket(Recipes.get().trimPacket());
         session.sendPacket(Recipes.get().packet());
-
-        session.sendPacket(new TrimDataPacket());
+        session.sendPacket(Recipes.get().unlockedPacket());
     }
 }
