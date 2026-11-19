@@ -118,7 +118,7 @@ import java.util.concurrent.ThreadLocalRandom;
  * RequestNetworkSettings -> NetworkSettings -> Login -> PlayStatus(LOGIN_SUCCESS)
  * -> ResourcePacksInfo -> ResourcePackClientResponse -> ResourcePackStack -> DimensionData
  * -> JigsawStructureData -> VoxelShapes -> StartGame -> BiomeDefinitionList -> AvailableEntityIdentifiers
- * -> ItemComponent -> CreativeContent -> TrimData -> CraftingData -> UnlockedRecipes
+ * -> ItemComponent -> CreativeContent -> TrimData -> CraftingData
  * -> RequestChunkRadius -> ChunkRadiusUpdated -> NetworkChunkPublisherUpdate -> LevelChunk(s)
  * -> PlayStatus(PLAYER_SPAWN) -> SetLocalPlayerAsInitialized
  * <p>
@@ -1242,16 +1242,12 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         creative.getContents().addAll(vanillaData.getCreativeItems());
         session.sendPacket(creative);
 
-        // The recipes packet carries cleanRecipes, so the client drops its built-in copy
-        // of vanilla's recipes for the server's own - two lists numbered from 1 would
-        // collide on every network id. Right after it, every recipe is marked unlocked:
-        // the client tracks unlocks itself, and a server that says nothing leaves it
-        // weighing the whole book's unlocking requirements on every inventory change.
         // The trim registry goes out before the recipes: the client resolves the smithing
         // trim recipe's item tags against it while it builds its recipe book, and rejects
-        // the join over an empty registry at that moment.
+        // the join over an empty registry at that moment. The recipes packet carries
+        // cleanRecipes, so the client drops its built-in copy for the server's own - two
+        // lists numbered from 1 would collide on every network id.
         session.sendPacket(Recipes.get().trimPacket());
         session.sendPacket(Recipes.get().packet());
-        session.sendPacket(Recipes.get().unlockedPacket());
     }
 }

@@ -20,7 +20,6 @@ import org.cloudburstmc.protocol.bedrock.data.inventory.descriptor.ItemDescripto
 import org.cloudburstmc.protocol.bedrock.data.inventory.descriptor.ItemTagDescriptor;
 import org.cloudburstmc.protocol.bedrock.packet.CraftingDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.TrimDataPacket;
-import org.cloudburstmc.protocol.bedrock.packet.UnlockedRecipesPacket;
 import org.jose4j.json.JsonUtil;
 import org.jose4j.lang.JoseException;
 
@@ -62,9 +61,6 @@ public final class Recipes {
 
     /** A damage value that means "any of this item, however it's colored or charged". */
     private static final int ANY_AUX = 32767;
-
-    /** What the wire calls that same "any damage" wildcard - a negative aux value. */
-    private static final int WIRE_ANY_AUX = -1;
 
     /** The tag the smithing recipes carry, as the bundled file has it in their block field. */
     private static final String SMITHING_TABLE = "smithing_table";
@@ -142,7 +138,6 @@ public final class Recipes {
 
     private final Map<Integer, Recipe> byNetId = new HashMap<>();
     private final CraftingDataPacket packet = new CraftingDataPacket();
-    private final List<String> unlockedIds = new ArrayList<>();
 
     public static Recipes get() {
         Recipes result = instance;
@@ -160,22 +155,6 @@ public final class Recipes {
     /** The packet that tells the client every recipe, sent as the player joins. */
     public CraftingDataPacket packet() {
         return packet;
-    }
-
-    /**
-     * The packet that marks every recipe unlocked from the start, sent right after the
-     * recipes packet. The client keeps track of recipe unlocks itself and weighs each
-     * recipe's unlocking requirement against the player's inventory, so a server that
-     * says nothing about it leaves the client churning through the whole book on every
-     * inventory change. Handing out the whole list at once is what Geyser does, and it
-     * keeps an empty list from ever reaching the client, which older versions choke on.
-     * The multi recipes carry no id and are always unlocked, so they aren't listed.
-     */
-    public UnlockedRecipesPacket unlockedPacket() {
-        UnlockedRecipesPacket unlocked = new UnlockedRecipesPacket();
-        unlocked.setAction(UnlockedRecipesPacket.ActionType.INITIALLY_UNLOCKED);
-        unlocked.getUnlockedRecipes().addAll(unlockedIds);
-        return unlocked;
     }
 
     /**
@@ -339,8 +318,7 @@ public final class Recipes {
             byNetId.put(netId, server);
         }
         packet.getShapedData().add(ShapedRecipeData.shaped(id, width, height, ingredients, List.of(result),
-                uuid(id), block, priority(entry), netId, true, RecipeUnlockingRequirement.INVALID));
-        unlockedIds.add(id);
+                uuid(id, netId), block, priority(entry), netId, true, RecipeUnlockingRequirement.INVALID));
         return true;
     }
 
@@ -375,8 +353,7 @@ public final class Recipes {
             byNetId.put(netId, new Shapeless(netId, id, ingredients, result));
         }
         packet.getShapelessData().add(ShapelessRecipeData.shapeless(id, descriptors, List.of(result),
-                uuid(id), block, priority(entry), netId, RecipeUnlockingRequirement.INVALID));
-        unlockedIds.add(id);
+                uuid(id, netId), block, priority(entry), netId, RecipeUnlockingRequirement.INVALID));
         return true;
     }
 
@@ -401,8 +378,7 @@ public final class Recipes {
             descriptors.add(descriptor);
         }
         packet.getShapelessUserData().add(ShapelessRecipeData.shulkerBox(id, descriptors, List.of(result),
-                uuid(id), (String) entry.get("block"), priority(entry), netId));
-        unlockedIds.add(id);
+                uuid(id, netId), (String) entry.get("block"), priority(entry), netId));
         return true;
     }
 
@@ -421,9 +397,10 @@ public final class Recipes {
             return false;
         }
         String id = uniqueId("minecraft:smithing_netherite_" + smithingBaseName(name(base)), usedIds);
+        // BDS tags smithing recipes with no block at all; the bundled file says
+        // "smithing_table". The empty tag is what BDS puts on the wire, so keep it.
         packet.getSmithingTransformData().add(SmithingTransformRecipeData.of(id, template, base, addition,
-                result, (String) entry.get("block"), netId));
-        unlockedIds.add(id);
+                result, "", netId));
         return true;
     }
 
@@ -446,15 +423,14 @@ public final class Recipes {
         // sends, from its dumped wire data; the bundled file leaves it unnamed.
         String id = uniqueId("minecraft:smithing_armor_trim", usedIds);
         packet.getSmithingTrimData().add(SmithingTrimRecipeData.of(id, base, addition, template,
-                (String) entry.get("block"), netId));
-        unlockedIds.add(id);
+                "", netId));
         return true;
     }
 
     /**
      * The wire descriptor for one raw ingredient: the item tag it names, or the item
-     * itself with its damage value - where the file's "any damage" marker becomes the
-     * negative aux value the wire uses for it. Null if this version doesn't have the item.
+     * itself with its damage value. The item's real identifier has to go on the wire too,
+     * since that's what the client matches against. Null if this version lacks the item.
      */
     private ItemDescriptorWithCount descriptor(Map<String, Object> raw) {
         String tag = (String) raw.get("itemTag");
@@ -466,11 +442,11 @@ public final class Recipes {
             return null;
         }
         int aux = ((Number) raw.getOrDefault("auxValue", 0)).intValue();
-        return new ItemDescriptorWithCount(new DefaultDescriptor(definition, wireAux(aux), ""), 1);
-    }
-
-    private static int wireAux(int aux) {
-        return aux == ANY_AUX ? WIRE_ANY_AUX : aux;
+        // The codec writes the identifier string on the wire for DefaultDescriptor, so it
+        // has to be the real item name - an empty string leaves the client with an ingredient
+        // that matches nothing. The wildcard 32767 from the data file is already the value
+        // BDS puts on the wire, so it is passed through unchanged.
+        return new ItemDescriptorWithCount(new DefaultDescriptor(definition, aux, definition.getIdentifier()), 1);
     }
 
     private static String name(ItemDescriptorWithCount descriptor) {
@@ -496,8 +472,14 @@ public final class Recipes {
         return id;
     }
 
-    private static UUID uuid(String id) {
-        return UUID.nameUUIDFromBytes(id.getBytes(StandardCharsets.UTF_8));
+    /**
+     * A recipe's own identifier. It has to differ per recipe even where two share a name:
+     * the four furnace recipes for one food (furnace, smoker, campfire, soul campfire) all
+     * carry the same id, and a client keying its book by this uuid would see one recipe in
+     * place of four. BDS numbers them apart the same way.
+     */
+    private static UUID uuid(String id, int netId) {
+        return UUID.nameUUIDFromBytes((id + "#" + netId).getBytes(StandardCharsets.UTF_8));
     }
 
     /** An ingredient: the items that satisfy it, whether by tag or by name, and the damage value wanted. */
@@ -723,7 +705,8 @@ public final class Recipes {
             if (tag != null) {
                 return new ItemDescriptorWithCount(new ItemTagDescriptor(tag), 1);
             }
-            return new ItemDescriptorWithCount(new DefaultDescriptor(definition(names.get(0)), wireAux(aux), ""), 1);
+            ItemDefinition definition = definition(names.get(0));
+            return new ItemDescriptorWithCount(new DefaultDescriptor(definition, aux, definition.getIdentifier()), 1);
         }
     }
 }
