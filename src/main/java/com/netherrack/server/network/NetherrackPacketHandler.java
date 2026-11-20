@@ -249,7 +249,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
                     session.getPeer().getChannel(), identityClaims.parsedIdentityPublicKey());
             if (mismatch != null) {
                 Logger.warn("Disconnecting " + username + ": " + mismatch);
-                session.disconnect(mismatch);
+                SessionDisconnect.disconnect(session, mismatch);
                 return PacketSignal.HANDLED;
             }
         } catch (Exception e) {
@@ -338,7 +338,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         // disconnected here; the player object still exists so onDisconnect() can save it once.
         PlayerLoginEvent login = EventBridge.playerLogin(netherrack, player);
         if (login.isCancelled()) {
-            session.disconnect(login.getKickMessage());
+            SessionDisconnect.disconnect(session, login.getKickMessage());
             return;
         }
 
@@ -365,7 +365,8 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
                 session.sendPacket(stack);
             }
             case COMPLETED -> sendStartGame();
-            case REFUSED -> session.disconnect("You must accept the resource packs to play.");
+            case REFUSED -> SessionDisconnect.disconnect(session,
+                    "You must accept the resource packs to play.");
             default -> {
                 // NONE / SEND_PACKS: nothing to do, since we never send any packs to request.
             }

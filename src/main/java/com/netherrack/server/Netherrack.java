@@ -27,6 +27,7 @@ import com.netherrack.server.player.Player;
 import com.netherrack.server.player.PlayerData;
 import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.player.PlayerSurvival;
+import com.netherrack.server.network.SessionDisconnect;
 import com.netherrack.server.plugin.EventBridge;
 import com.netherrack.server.plugin.PluginManagerImpl;
 import com.netherrack.server.setup.Lang;
@@ -312,7 +313,7 @@ public class Netherrack {
         // Players see why they were let go, rather than losing the connection.
         String message = settings.getString("messages.server-shutdown");
         for (Player player : List.copyOf(playerManager.getPlayers())) {
-            player.getSession().disconnect(message);
+            SessionDisconnect.disconnect(player.getSession(), message);
         }
         sleep(200);
         try {

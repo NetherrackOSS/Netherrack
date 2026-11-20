@@ -2,6 +2,7 @@ package com.netherrack.server.plugin;
 
 import com.netherrack.api.entity.Player;
 import com.netherrack.api.world.World;
+import com.netherrack.server.network.SessionDisconnect;
 import org.cloudburstmc.protocol.bedrock.packet.TextPacket;
 
 import java.util.UUID;
@@ -56,7 +57,7 @@ final class PlayerAdapter implements Player {
 
     @Override
     public void kick(String reason) {
-        player.getSession().disconnect(reason);
+        SessionDisconnect.disconnect(player.getSession(), reason);
     }
 
     com.netherrack.server.player.Player serverPlayer() {

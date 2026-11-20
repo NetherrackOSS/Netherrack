@@ -43,6 +43,9 @@
   lifecycle, config, event ordering, cancellation, failure isolation and unregister-on-disable.
 
 ### Changed
+- Console logout lines now read `SchleroMC logged out due to: Disconnected`. The reason is the
+  player's kick message when the server ended the session, or a plain translation of the transport
+  reason when the client left; in-game leave messages are unchanged.
 - Logging is configured before Netty, ANSI detection or world loading, so even the first line uses
   the operator's settings. Warnings raised while reading the file are held until `logs/latest.log`
   is open and then written to it.
