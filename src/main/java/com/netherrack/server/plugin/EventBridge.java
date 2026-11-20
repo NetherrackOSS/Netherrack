@@ -11,7 +11,6 @@ import com.netherrack.api.event.player.PlayerQuitEvent;
 import com.netherrack.api.event.server.ServerStartEvent;
 import com.netherrack.api.event.server.ServerStopEvent;
 import com.netherrack.api.world.BlockPosition;
-import com.netherrack.api.world.BlockSnapshot;
 import com.netherrack.server.Netherrack;
 import com.netherrack.server.block.Block;
 import org.cloudburstmc.math.vector.Vector3i;
@@ -71,7 +70,7 @@ public final class EventBridge {
                                              com.netherrack.server.player.Player player,
                                              Vector3i position, Block block) {
         BlockPlaceEvent event = new BlockPlaceEvent(apiPlayer(server, player), position(position),
-                snapshot(block));
+                BlockSnapshots.snapshot(block));
         call(server, event);
         return event;
     }
@@ -80,7 +79,7 @@ public final class EventBridge {
                                              com.netherrack.server.player.Player player,
                                              Vector3i position, Block block) {
         BlockBreakEvent event = new BlockBreakEvent(apiPlayer(server, player), position(position),
-                snapshot(block));
+                BlockSnapshots.snapshot(block));
         call(server, event);
         return event;
     }
@@ -96,10 +95,5 @@ public final class EventBridge {
 
     private static BlockPosition position(Vector3i position) {
         return new BlockPosition(position.getX(), position.getY(), position.getZ());
-    }
-
-    private static BlockSnapshot snapshot(Block block) {
-        return block == null ? null
-                : new BlockSnapshot(block.getIdentifier(), block.getBlockStateHash());
     }
 }

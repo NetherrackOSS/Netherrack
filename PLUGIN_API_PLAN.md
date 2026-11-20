@@ -2,8 +2,9 @@
 
 This is a design document for a Nukkit-like plugin API split across two repositories:
 `NetherrackAPI` holds the contracts plugins compile against, and this repository implements
-those contracts and fires the events. Phases 1 (lifecycle), 2 (events) and 3 (scheduler, commands
-and permissions) are implemented; the remaining phases are still plans.
+those contracts and fires the events. Phases 1 (lifecycle), 2 (events), 3a (scheduler, commands
+and permissions) and 3b (player, world and block) are implemented; the remaining phases are still
+plans.
 
 ## Goals and constraints
 
@@ -37,8 +38,8 @@ src/main/java/com/netherrack/api/
                  PlayerChatEvent, PlayerCommandEvent
   event/server/  ServerEvent, ServerStartEvent, ServerStopEvent
   event/block/   BlockEvent, BlockPlaceEvent, BlockBreakEvent
-  entity/    Player
-  world/     World, BlockSnapshot
+  entity/    Player, GameMode
+  world/     World, BlockSnapshot, BlockPosition, Location
   scheduler/ Scheduler, TaskHandler
   command/   Command, CommandExecutor, CommandSender, PluginCommand
   permission/ Permissible, Permission, PermissionAttachment, PermissionDefault,
@@ -148,7 +149,7 @@ ping only the listener to the tick thread would not make world access safer — 
 is to move the block action itself, listeners included, onto one owner thread. Listeners must
 return quickly; a plugin scheduler for slower work comes in Phase 3.
 
-## Phase 3 — scheduler, commands, permissions (implemented)
+## Phase 3a — scheduler, commands, permissions (implemented)
 
 - The server's tick scheduler still only knows one-shot `schedule(int ticks, Runnable)`; the
   plugin layer wraps it with ids, repeating tasks and cancellation. The API exposes `Scheduler`
@@ -167,14 +168,25 @@ return quickly; a plugin scheduler for slower work comes in Phase 3.
   NOT_OPERATOR or UNDEFINED. `PermissionManager` is only a node registry; a permission manager
   plugin changes players through `PermissionAttachment`.
 
-## Phase 4 — player, world and block API
+## Phase 3b — player, world and block API (implemented)
 
-- `Player`: name, UUID/XUID, position, teleport, sendMessage, kick, game mode, inventory,
-  world, permission checks.
-- `World`: name, seed, spawn, `getBlock(x,y,z)`, `setBlock(x,y,z,snapshot)`, save.
-- `BlockSnapshot`: immutable name/state value type so plugins never hold a live server `Block`.
-- Only add what an event needs; avoid designing the entire game in the API before there are
-  plugins using it.
+- `Location` is an immutable world point with yaw and pitch in degrees. Its y is the player's feet,
+  so it matches `World.getBlock`, vanilla `/tp` and `BlockPosition` rather than the eye-height
+  vector carried by Bedrock movement packets. `toBlockPosition()` floors the coordinates.
+- `Player` now exposes `getLocation()`, `teleport(Location)`, `getGameMode()` and
+  `setGameMode(GameMode)`. The adapter converts between feet and eye height and calls
+  `PlayerManager.teleport` with rotation, so the client, its loaded chunks and every onlooker all
+  move together. `GameMode` uses Bedrock's ids: survival 0, creative 1, adventure 2, spectator 6.
+- `World.getBlock`/`setBlock` accept a `BlockPosition` as well as x/y/z. The server resolves a
+  snapshot through its exact properties first, then its state hash and finally the block's default
+  state, so a snapshot read from a world can be written back without losing its variant.
+- `BlockSnapshot` is immutable and now carries the block's vanilla properties as well as its name
+  and state hash. NBT bit properties become booleans; integers and strings keep their values.
+  `World.setBlock` changes saved world data but does not send a block-update packet to clients that
+  already have the chunk yet.
+- Calls from listeners happen on the player's network thread, where the action itself runs. Use the
+  Phase 3a scheduler to move slower work onto the tick thread; don't hold a live server object in a
+  plugin. Avoid designing the entire game in the API before there are plugins using it.
 
 ## Phase 5 — polish
 
@@ -199,7 +211,8 @@ page linked from the README.
 - API repo: plain-Java checks (no new test dependency) for `plugin.yml` parsing, handler
   ordering by priority and across base classes, cancellation with `ignoreCancelled`, handler
   failure isolation, unregister-on-disable, command declarations, permission attachments and
-  the tri-state permission model. These checks are passing for Phases 1-3.
+  the tri-state permission model, locations, game modes and block state properties. These checks
+  are passing for Phases 1-3b.
 - This repo: extend `tests/run.sh` with a smoke test that loads a stub plugin jar and asserts
   the order `onLoad → onEnable → (events fire) → onDisable`, plus a cancelled event not reaching
   the server action.

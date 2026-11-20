@@ -228,8 +228,9 @@ Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Over
 - **Plugin API** — jars in `plugins/` are read in dependency order and get `onLoad()`, `onEnable()`
   and `onDisable()` callbacks. Plugins can register listeners with priorities and cancellation for
   server, player and block events, declare commands in `plugin.yml`, schedule delayed and repeating
-  tick tasks, and register permission nodes with wildcard matching and per-player attachments.
-  `examples/hello-plugin/` is a minimal Maven plugin showing all of them.
+  tick tasks, and register permission nodes with wildcard matching and per-player attachments. They
+  can also read player locations and game modes, teleport players, and read or replace blocks as
+  immutable snapshots. `examples/hello-plugin/` is a minimal Maven plugin showing all of them.
 
 # 🚧 Current status
 
@@ -242,6 +243,8 @@ include:
   plains.
 - Runtime plugin enable, disable and reload are still to come; restarting is needed after adding,
   removing or updating a plugin jar.
+- Plugin `World.setBlock()` changes saved world data but does not yet send a block-update packet to
+  clients that already have the chunk; the new state appears when they reload the chunk.
 - Furnace, stonecutter, and smithing screens and their interactions are not implemented;
   shift-click crafting of a stack is not supported.
 - Items dropped into lava or fire are not destroyed, and death drops in unloaded chunks or

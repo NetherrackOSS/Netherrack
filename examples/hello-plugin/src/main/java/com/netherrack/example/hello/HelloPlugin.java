@@ -2,16 +2,23 @@ package com.netherrack.example.hello;
 
 import com.netherrack.api.command.Command;
 import com.netherrack.api.command.CommandSender;
+import com.netherrack.api.entity.Player;
 import com.netherrack.api.permission.Permission;
 import com.netherrack.api.permission.PermissionDefault;
 import com.netherrack.api.plugin.PluginBase;
+import com.netherrack.api.world.BlockPosition;
+import com.netherrack.api.world.BlockSnapshot;
+import com.netherrack.api.world.Location;
+
+import java.util.Locale;
 
 /**
- * A small plugin that shows the lifecycle callbacks, listeners, a command, a permission node and
- * a scheduled task.
+ * A small plugin that shows the lifecycle callbacks, listeners, commands, a permission node, a
+ * scheduled task and the player/world API.
  * <p>
  * The greeting is kept in the plugin's config.yml, so the first start writes a file that can be
- * edited without rebuilding the jar. The listener demonstrates the events a plugin can hear.
+ * edited without rebuilding the jar. The listener demonstrates the events a plugin can hear, and
+ * /where reads a player's position, game mode and the block beneath them.
  */
 public final class HelloPlugin extends PluginBase {
 
@@ -35,11 +42,36 @@ public final class HelloPlugin extends PluginBase {
         getScheduler().runTask(this, () -> getLogger().info("HelloPlugin's delayed task ran."));
     }
 
-    /** Registers through plugin.yml as /hello or /hi; returning false would show its usage line. */
+    /** Registered through plugin.yml; returning false would show the command's usage line. */
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (command.getName().equals("where")) {
+            return where(sender, args);
+        }
         String target = args.length == 0 ? sender.getName() : String.join(" ", args);
         sender.sendMessage(greeting() + " " + target);
+        return true;
+    }
+
+    /** /where [up] shows where the player is; "up" also demonstrates API teleporting. */
+    private boolean where(CommandSender sender, String[] args) {
+        Player player = sender.getPlayer();
+        if (player == null) {
+            sender.sendMessage("Only players can use /where.");
+            return true;
+        }
+        Location location = player.getLocation();
+        if (args.length > 0 && args[0].equalsIgnoreCase("up")) {
+            player.teleport(new Location(location.getX(), location.getY() + 5, location.getZ(),
+                    location.getYaw(), location.getPitch()));
+            location = player.getLocation();
+        }
+        BlockPosition feet = location.toBlockPosition();
+        BlockSnapshot below = player.getWorld().getBlock(
+                new BlockPosition(feet.getX(), feet.getY() - 1, feet.getZ()));
+        sender.sendMessage("Position: " + location + "; game mode: "
+                + player.getGameMode().name().toLowerCase(Locale.ROOT));
+        sender.sendMessage("Standing on: " + (below == null ? "air" : below));
         return true;
     }
 

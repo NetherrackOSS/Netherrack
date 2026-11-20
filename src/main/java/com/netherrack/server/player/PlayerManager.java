@@ -217,7 +217,16 @@ public class PlayerManager {
      * follows them, and everyone who can see them is told where they went.
      */
     public void teleport(Player player, Vector3f position) {
-        player.setLocation(position, player.getRotation());
+        teleport(player, position, player.getRotation());
+    }
+
+    /**
+     * As {@link #teleport(Player, Vector3f)}, but also turns the player to face the given
+     * direction. Plugins supply both when teleporting because an API Location carries yaw and
+     * pitch along with the position.
+     */
+    public void teleport(Player player, Vector3f position, Vector3f rotation) {
+        player.setLocation(position, rotation);
         ChunkView view = player.getChunkView();
         if (view != null) {
             view.moveTo(position);
@@ -229,7 +238,7 @@ public class PlayerManager {
         MovePlayerPacket move = new MovePlayerPacket();
         move.setRuntimeEntityId(player.getEntityId());
         move.setPosition(position);
-        move.setRotation(player.getRotation());
+        move.setRotation(rotation);
         move.setMode(MovePlayerPacket.Mode.TELEPORT);
         move.setTeleportationCause(MovePlayerPacket.TeleportationCause.COMMAND);
         move.setOnGround(true);
