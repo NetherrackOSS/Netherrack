@@ -63,13 +63,6 @@ JVM flags used by the included start scripts to allow native memory access; see 
 java -jar netherrack.jar
 ```
 
-If the native transport complains about memory or native access, use the flags from
-`start.sh` (Linux/macOS) or `start.bat` (Windows) instead:
-
-```bash
-java --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED -jar netherrack.jar
-```
-
 ## 🔧 Build from source
 
 ```bash
