@@ -21,7 +21,7 @@
 </p>
 
 > [!WARNING]
-> Netherrack **v0.1.0-beta** is experimental software. Expect missing features, bugs, and
+> Netherrack **v0.4.0-beta** is experimental software. Expect missing features, bugs, and
 > glitches. Do not use it for a production server or a world you care about without keeping
 > independent backups.
 
@@ -90,7 +90,7 @@ The first launch (when `server.properties` is missing) runs an interactive setup
 You should see something like this:
 
 ```
-[16:01:07] [main] [INFO] Starting Netherrack server version 0.1.0-beta
+[16:01:07] [main] [INFO] Starting Netherrack server version 0.4.0-beta
 [16:01:07] [main] [INFO] First-time setup detected. Launching setup wizard...
 
 ═══════════════════════════════════════════════════════════════
@@ -193,7 +193,7 @@ Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Over
 
 # 🚧 Current status
 
-v0.1.0-beta is an early beta, not a feature-complete server. Known gaps and untested areas
+v0.4.0-beta is an early beta, not a feature-complete server. Known gaps and untested areas
 include:
 
 - Long-term stability, many simultaneous players, and shutdown or crash edge cases.

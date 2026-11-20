@@ -1,6 +1,6 @@
 # Installation Instructions
 
-This guide covers installing and launching **Netherrack v0.1.0-beta**. For an overview of
+This guide covers installing and launching **Netherrack v0.4.0-beta**. For an overview of
 the project and its features, see the [README](README.md).
 
 ## Requirements
@@ -69,7 +69,7 @@ runs before the server starts:
 You should see something like this:
 
 ```
-[16:01:07] [main] [INFO] Starting Netherrack server version 0.1.0-beta
+[16:01:07] [main] [INFO] Starting Netherrack server version 0.4.0-beta
 [16:01:07] [main] [INFO] First-time setup detected. Launching setup wizard...
 
 ═══════════════════════════════════════════════════════════════
