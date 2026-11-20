@@ -8,6 +8,7 @@ import com.netherrack.server.command.DeopCommand;
 import com.netherrack.server.command.GamemodeCommand;
 import com.netherrack.server.command.GiveCommand;
 import com.netherrack.server.command.HelpCommand;
+import com.netherrack.server.command.KickCommand;
 import com.netherrack.server.command.KillCommand;
 import com.netherrack.server.command.OpCommand;
 import com.netherrack.server.command.PluginsCommand;
@@ -92,6 +93,7 @@ public class Netherrack {
         commandManager.register(new OpCommand());
         commandManager.register(new DeopCommand());
         commandManager.register(new KillCommand());
+        commandManager.register(new KickCommand());
         commandManager.register(new TpCommand());
         commandManager.register(new GiveCommand());
         commandManager.register(new ReloadCommand());

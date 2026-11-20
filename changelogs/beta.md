@@ -26,6 +26,8 @@
   points in startup and shutdown. A failing callback disables only that plugin and its dependents.
 - **`/plugins` command:** lists loaded plugins alphabetically as `Plugins (1): HelloPlugin`, with
   each name in lime green for players and in ANSI lime green on a color-capable console.
+- **`/kick` command:** operators with command level 2 or higher can disconnect an online player,
+  with an optional reason shown on their disconnect screen and in the console's logout line.
 - **Plugin events:** plugins can register `Listener` classes with `@EventHandler`, choose from six
   priorities, cancel cancellable events, and let base-class listeners receive subclasses. Handler
   errors are logged without stopping later handlers, and every handler is unregistered when its

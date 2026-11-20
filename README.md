@@ -215,6 +215,7 @@ Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Over
   | `gamemode` | — | 2 | Change a player's game mode |
   | `give` | — | 2 | Give a player an item |
   | `kill` | — | 2 | Kill a player |
+  | `kick` | — | 2 | Disconnect a player, optionally with a reason |
   | `tp` | — | 2 | Teleport a player (players or coordinates, with `~` relative support) |
   | `op` / `deop` | — | 3 | Grant or remove operator status |
   | `reload` | `rl` | 4 | Reload logging settings from `netherrack.yml` |
