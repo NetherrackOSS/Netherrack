@@ -1,5 +1,6 @@
 package com.netherrack.server;
 
+import com.netherrack.api.plugin.PluginLoadOrder;
 import com.netherrack.server.command.AvailableCommands;
 import com.netherrack.server.command.CommandManager;
 import com.netherrack.server.command.ConsoleCommandSender;
@@ -9,6 +10,8 @@ import com.netherrack.server.command.GiveCommand;
 import com.netherrack.server.command.HelpCommand;
 import com.netherrack.server.command.KillCommand;
 import com.netherrack.server.command.OpCommand;
+import com.netherrack.server.command.PluginsCommand;
+import com.netherrack.server.command.ReloadCommand;
 import com.netherrack.server.command.StopCommand;
 import com.netherrack.server.crafting.Recipes;
 import com.netherrack.server.command.TpCommand;
@@ -24,10 +27,12 @@ import com.netherrack.server.player.Player;
 import com.netherrack.server.player.PlayerData;
 import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.player.PlayerSurvival;
+import com.netherrack.server.plugin.PluginManagerImpl;
 import com.netherrack.server.setup.Lang;
 import com.netherrack.server.setup.SetupWizard;
 import com.netherrack.server.util.AnsiSupport;
 import com.netherrack.server.util.Console;
+import com.netherrack.server.util.LoggingConfig;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.util.NettyLogBridge;
 import com.netherrack.server.util.Scheduler;
@@ -58,6 +63,7 @@ public class Netherrack {
     private final PlayerManager playerManager = new PlayerManager();
     private final WorldManager worldManager;
     private final CommandManager commandManager;
+    private final PluginManagerImpl pluginManager;
     private World world;
     private ItemEntities itemEntities;
     private ChunkViews chunkViews;
@@ -86,6 +92,10 @@ public class Netherrack {
         commandManager.register(new KillCommand());
         commandManager.register(new TpCommand());
         commandManager.register(new GiveCommand());
+        commandManager.register(new ReloadCommand());
+        commandManager.register(new PluginsCommand());
+
+        this.pluginManager = new PluginManagerImpl(this, Path.of("plugins"));
     }
 
     public ServerConfig getConfig() {
@@ -145,7 +155,15 @@ public class Netherrack {
         return commandManager;
     }
 
+    public PluginManagerImpl getPluginManager() {
+        return pluginManager;
+    }
+
     public static void main(String[] args) {
+        // Read the logging sections first, so even the first line the server prints uses them.
+        // A missing netherrack.yml leaves the built-in defaults in place until the normal
+        // config load writes the file later in startup.
+        Logger.configure(LoggingConfig.from(NetherrackConfig.readQuietly(NetherrackConfig.FILE)));
         NettyLogBridge.install();
         AnsiSupport.init();
         new Netherrack().start();
@@ -185,6 +203,11 @@ public class Netherrack {
         if (NettyLogBridge.isDebug()) {
             Logger.warn(lang.get("server.debug_enabled"));
         }
+
+        // STARTUP plugins get their callbacks here, before the world and listener exist. Their
+        // jars are read once; the POSTWORLD callbacks come after those are ready below.
+        pluginManager.discover();
+        pluginManager.callOnLoad(PluginLoadOrder.STARTUP);
 
         String ip = config.get("server-ip", "0.0.0.0");
         int port = config.getInt("server-port", 19132);
@@ -226,6 +249,9 @@ public class Netherrack {
         sleep(300);
         Logger.info(lang.get("server.thread_running"));
         Logger.info(lang.get("server.done", maxPlayers));
+
+        pluginManager.callOnLoad(PluginLoadOrder.POSTWORLD);
+        pluginManager.enableAll();
 
         runConsoleLoop();
     }
@@ -285,6 +311,7 @@ public class Netherrack {
         } catch (RuntimeException e) {
             Logger.error("Error closing the network listener: " + e);
         }
+        pluginManager.disableAll();
         ticker.shutdownNow();
         closeWorld();
         Logger.info(Lang.current.get("server.closed"));
