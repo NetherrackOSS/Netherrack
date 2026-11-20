@@ -26,10 +26,20 @@
   points in startup and shutdown. A failing callback disables only that plugin and its dependents.
 - **`/plugins` command:** lists loaded plugins alphabetically as `Plugins (1): HelloPlugin`, with
   each name in lime green for players and in ANSI lime green on a color-capable console.
+- **Plugin events:** plugins can register `Listener` classes with `@EventHandler`, choose from six
+  priorities, cancel cancellable events, and let base-class listeners receive subclasses. Handler
+  errors are logged without stopping later handlers, and every handler is unregistered when its
+  plugin is disabled.
+- **First event set:** server start/stop, player login/join/quit/chat/command, and block
+  place/break. Cancellable events are wired into the action they guard: a cancelled login kicks
+  the player, a cancelled chat isn't broadcast, a cancelled command doesn't run, and cancelled
+  block changes are sent back to the client.
+- **Plugin-facing world types:** the API now has small `Player`, `World` and `BlockSnapshot`
+  interfaces backed by adapters, so plugins never see protocol or storage classes.
 - **Example Maven plugin:** `examples/hello-plugin/` builds a jar that demonstrates all three
-  lifecycle callbacks and a generated `config.yml`.
-- **Regression harness:** `tests/run.sh` now holds 48 plain-Java checks for logging configuration,
-  rendering, defaults and generated YAML.
+  lifecycle callbacks, a generated `config.yml`, and a listener for server and player events.
+- **API regression checks:** the separate `NetherrackAPI` repository has plain-Java checks for
+  lifecycle, config, event ordering, cancellation, failure isolation and unregister-on-disable.
 
 ### Changed
 - Logging is configured before Netty, ANSI detection or world loading, so even the first line uses
@@ -45,10 +55,10 @@
 - README, installation and third-party notices now describe `v0.4.0-beta`; the README logo,
   tagline and badges are unchanged. The README documents every logging setting and lists the new
   commands.
-- A design document at `PLUGIN_API_PLAN.md` records the plugin API boundaries, event plan and
-  implementation phases.
+- A design document at `PLUGIN_API_PLAN.md` records the plugin API boundaries, event plan,
+  implementation phases and the threading rule for each event.
 
 ### Known limitations
-- The plugin API currently covers lifecycle only. Events, scheduler, commands and permissions are
-  still planned, and runtime plugin enable/disable/reload is not implemented.
-- A real Bedrock client has not yet been used to verify the `/plugins` command's in-game colors.
+- The plugin API currently covers lifecycle and the first server, player and block events. The
+  scheduler, commands and permissions are still planned, as is runtime plugin
+  enable/disable/reload.

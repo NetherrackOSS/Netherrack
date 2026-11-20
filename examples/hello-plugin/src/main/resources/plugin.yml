@@ -2,6 +2,6 @@ name: HelloPlugin
 version: 1.0.0
 api-version: 0.4.0
 main: com.netherrack.example.hello.HelloPlugin
-description: A minimal lifecycle example plugin
+description: A minimal lifecycle and events example plugin
 author: Netherrack
 load: POSTWORLD

@@ -27,6 +27,7 @@ import com.netherrack.server.player.Player;
 import com.netherrack.server.player.PlayerData;
 import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.player.PlayerSurvival;
+import com.netherrack.server.plugin.EventBridge;
 import com.netherrack.server.plugin.PluginManagerImpl;
 import com.netherrack.server.setup.Lang;
 import com.netherrack.server.setup.SetupWizard;
@@ -159,6 +160,11 @@ public class Netherrack {
         return pluginManager;
     }
 
+    /** The loaded world, or null during the early part of startup. */
+    public World getWorld() {
+        return world;
+    }
+
     public static void main(String[] args) {
         // Read the logging sections first, so even the first line the server prints uses them.
         // A missing netherrack.yml leaves the built-in defaults in place until the normal
@@ -252,6 +258,8 @@ public class Netherrack {
 
         pluginManager.callOnLoad(PluginLoadOrder.POSTWORLD);
         pluginManager.enableAll();
+        // Fired after onEnable() so listeners registered there hear the server is ready.
+        EventBridge.serverStart(this);
 
         runConsoleLoop();
     }
@@ -300,6 +308,7 @@ public class Netherrack {
 
     private void stopServer() {
         Logger.info(Lang.current.get("server.stopping"));
+        EventBridge.serverStop(this);
         // Players see why they were let go, rather than losing the connection.
         String message = settings.getString("messages.server-shutdown");
         for (Player player : List.copyOf(playerManager.getPlayers())) {

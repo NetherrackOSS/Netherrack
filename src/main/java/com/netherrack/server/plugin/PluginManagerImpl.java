@@ -1,5 +1,8 @@
 package com.netherrack.server.plugin;
 
+import com.netherrack.api.event.Event;
+import com.netherrack.api.event.EventManager;
+import com.netherrack.api.event.Listener;
 import com.netherrack.api.plugin.Plugin;
 import com.netherrack.api.plugin.PluginBase;
 import com.netherrack.api.plugin.PluginDescription;
@@ -26,8 +29,9 @@ import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 /**
- * Loads jars from plugins/, keeps their lifecycle in dependency order, and exposes the
- * plugin-facing part of that state through the API's PluginManager interface.
+ * Loads jars from plugins/, keeps their lifecycle in dependency order, dispatches events to their
+ * listeners, and exposes the plugin-facing part of that state through the API's PluginManager
+ * interface.
  * <p>
  * The server calls discover() once after its config is ready, then onLoad in two passes (STARTUP
  * before the world exists, POSTWORLD after it does), enableAll once everything is listening, and
@@ -44,12 +48,17 @@ public final class PluginManagerImpl implements PluginManager {
     private final Path pluginsDir;
     private final ServerAdapter server;
     private final JavaPluginLoader loader;
+    private final EventManager events;
     private final List<PluginContainer> plugins = new ArrayList<>();
     private boolean discovered;
 
     public PluginManagerImpl(Netherrack server, Path pluginsDir) {
         this.pluginsDir = pluginsDir;
         this.server = new ServerAdapter(server);
+        this.events = new EventManager(error -> {
+            Throwable cause = error.getCause() == null ? error : error.getCause();
+            Logger.error("Error in a plugin event handler: " + describe(cause));
+        });
         ClassLoader parent = server.getClass().getClassLoader();
         this.loader = new JavaPluginLoader(pluginsDir, this, this.server,
                 parent != null ? parent : ClassLoader.getSystemClassLoader());
@@ -130,6 +139,7 @@ public final class PluginManagerImpl implements PluginManager {
             lifecycle(container, "onEnable", Plugin::onEnable);
             if (container.failed) {
                 setEnabled(container, false);
+                events.unregisterEvents(container.plugin);
             }
         }
     }
@@ -144,6 +154,7 @@ public final class PluginManagerImpl implements PluginManager {
             }
             setEnabled(container, false);
             lifecycle(container, "onDisable", Plugin::onDisable);
+            events.unregisterEvents(container.plugin);
             close(container);
         }
     }
@@ -181,6 +192,31 @@ public final class PluginManagerImpl implements PluginManager {
             }
         }
         return false;
+    }
+
+    @Override
+    public void registerEvents(Listener listener, Plugin plugin) {
+        events.registerEvents(listener, plugin);
+    }
+
+    @Override
+    public void unregisterEvents(Listener listener) {
+        events.unregisterEvents(listener);
+    }
+
+    @Override
+    public void unregisterEvents(Plugin plugin) {
+        events.unregisterEvents(plugin);
+    }
+
+    @Override
+    public void callEvent(Event event) {
+        events.callEvent(event);
+    }
+
+    /** The API-facing server, for EventBridge's conversions. */
+    ServerAdapter adapter() {
+        return server;
     }
 
     private boolean dependenciesReady(PluginContainer container) {

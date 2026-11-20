@@ -1,5 +1,8 @@
 package com.netherrack.server.network;
 
+import com.netherrack.api.event.player.PlayerChatEvent;
+import com.netherrack.api.event.player.PlayerCommandEvent;
+import com.netherrack.api.event.player.PlayerLoginEvent;
 import com.netherrack.server.Netherrack;
 import com.netherrack.server.block.Block;
 import com.netherrack.server.command.AvailableCommands;
@@ -15,6 +18,7 @@ import com.netherrack.server.player.PlayerInventory;
 import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.player.PlayerSurvival;
 import com.netherrack.server.player.SkinParser;
+import com.netherrack.server.plugin.EventBridge;
 import com.netherrack.server.util.ColorCodes;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.world.World;
@@ -171,7 +175,8 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         this.players = players;
         this.netherrack = netherrack;
         this.itemEntities = netherrack.getItemEntities();
-        this.blockInteraction = new BlockInteraction(world, players, itemEntities, netherrack.getScheduler());
+        this.blockInteraction = new BlockInteraction(world, players, itemEntities, netherrack.getScheduler(),
+                netherrack);
         this.chunkViews = netherrack.getChunkViews();
         this.chunkView = new ChunkView(session, world);
     }
@@ -329,6 +334,14 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         Permission permission = netherrack.getPermissions().of(xuid);
         player.setPermission(permission, netherrack.commandLevelFor(permission));
 
+        // Plugins get the last word before the client is told it can play. A cancelled login is
+        // disconnected here; the player object still exists so onDisconnect() can save it once.
+        PlayerLoginEvent login = EventBridge.playerLogin(netherrack, player);
+        if (login.isCancelled()) {
+            session.disconnect(login.getKickMessage());
+            return;
+        }
+
         PlayStatusPacket loginSuccess = new PlayStatusPacket();
         loginSuccess.setStatus(PlayStatusPacket.Status.LOGIN_SUCCESS);
         session.sendPacket(loginSuccess);
@@ -457,6 +470,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         players.join(player);
 
         players.broadcastPresence(true, username);
+        EventBridge.playerJoin(netherrack, player);
 
         return PacketSignal.HANDLED;
     }
@@ -617,7 +631,10 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         if (message.startsWith("/")) {
             runCommand(message, null);
         } else {
-            players.broadcastChat(player, message);
+            PlayerChatEvent chat = EventBridge.playerChat(netherrack, player, message);
+            if (!chat.isCancelled()) {
+                players.broadcastChat(player, chat.getMessage());
+            }
         }
 
         return PacketSignal.HANDLED;
@@ -641,8 +658,16 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
      */
     private void runCommand(String command, CommandOriginData origin) {
         command = ColorCodes.singleLine(command);
-        Logger.info(username + " issued command: " + command);
         String input = command.startsWith("/") ? command.substring(1) : command;
+        PlayerCommandEvent event = EventBridge.playerCommand(netherrack, player, input);
+        if (event.isCancelled()) {
+            return;
+        }
+        input = event.getCommand();
+        if (input.startsWith("/")) {
+            input = input.substring(1);
+        }
+        Logger.info(username + " issued command: " + input);
         netherrack.getCommandManager().dispatch(netherrack, new PlayerCommandSender(player, origin), input);
     }
 
@@ -1071,6 +1096,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             world.savePlayer(player.getUuid(), PlayerData.save(player));
             if (players.leave(player)) {
                 players.broadcastPresence(false, username);
+                EventBridge.playerQuit(netherrack, player);
             }
         }
     }

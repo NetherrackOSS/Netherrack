@@ -2,8 +2,8 @@
 
 This is a design document for a Nukkit-like plugin API split across two repositories:
 `NetherrackAPI` holds the contracts plugins compile against, and this repository implements
-those contracts and fires the events. Phase 1 (lifecycle) is implemented; the remaining phases
-are still plans.
+those contracts and fires the events. Phases 1 (lifecycle) and 2 (events) are implemented; the
+remaining phases are still plans.
 
 ## Goals and constraints
 
@@ -31,7 +31,8 @@ pom.xml
 src/main/java/com/netherrack/api/
   plugin/    Plugin, PluginBase, PluginDescription, PluginLoadOrder, PluginLogger
   event/     Event, Cancellable, Listener, EventHandler, EventPriority,
-             EventExecutor, HandlerList, EventException
+             EventExecutor, HandlerList, EventException, EventManager,
+             RegisteredHandler
   event/player/  PlayerEvent, PlayerLoginEvent, PlayerJoinEvent, PlayerQuitEvent,
                  PlayerChatEvent, PlayerCommandEvent
   event/server/  ServerEvent, ServerStartEvent, ServerStopEvent
@@ -54,7 +55,8 @@ src/main/java/com/netherrack/server/plugin/
   PluginClassLoader      per-plugin loader, parent-first for API, isolated otherwise
   ServerAdapter          implements com.netherrack.api.Server over Netherrack
   PlayerAdapter          implements com.netherrack.api.entity.Player over server Player
-  EventBridge            helpers to call events from packet handlers and tick code
+  WorldAdapter           implements com.netherrack.api.world.World over server World
+  EventBridge            helpers to call events from packet handlers and startup code
   PluginCommandAdapter   bridges API Command to server CommandManager
 ```
 
@@ -62,7 +64,7 @@ The existing `Scheduler`, `CommandManager`, `PlayerManager`, `World`, `Logger` a
 `NetherrackConfig` stay as they are; the plugin layer adapts to them rather than rewriting
 them. API-facing types never leak into their signatures.
 
-## Phase 1 — lifecycle only
+## Phase 1 — lifecycle only (implemented)
 
 These are **callbacks, not `Event` objects**. `onLoad()`, `onEnable()` and `onDisable()` are
 declared on `Plugin` and default to no-ops in `PluginBase`, matching Nukkit's familiar lifecycle.
@@ -101,7 +103,7 @@ config class, `getLogger()` (prefixed with the plugin name and routed to our `Lo
 reader/writer implemented in the API — don't add SnakeYAML yet, and don't expose
 `NetherrackConfig`.
 
-## Phase 2 — events
+## Phase 2 — events (implemented)
 
 - `Event` is abstract with `getEventName()`; `Cancellable` is a separate interface with
   `setCancelled(boolean)` / `isCancelled()`.
@@ -109,10 +111,10 @@ reader/writer implemented in the API — don't add SnakeYAML yet, and don't expo
   ignoreCancelled = true)` marks methods with one `Event` parameter.
 - `EventPriority` in ascending order: `LOWEST`, `LOW`, `NORMAL`, `HIGH`, `HIGHEST`, `MONITOR`.
   `MONITOR` handlers must not modify or cancel the event.
-- `HandlerList` is held per event class. Prefer a central
-  `Map<Class<? extends Event>, HandlerList>` in the manager over Nukkit's
-  reflection-over-static-fields approach; keep a static `getHandlers()` on each event class
-  only if it buys compatibility.
+- `HandlerList` is held per event class. A central `Map<Class<? extends Event>, HandlerList>` in
+  `EventManager` avoids Nukkit's reflection-over-static-fields approach; dispatch walks the
+  event's superclasses so a listener for `PlayerEvent` also sees `PlayerJoinEvent`, and sorts all
+  matching handlers together by priority. There is no static `getHandlers()` on event classes.
 - Registration caches the reflected `Method` (or a `MethodHandle`) at register time; dispatch
   wraps invocation errors in `EventException`, logs them, and keeps calling later handlers.
 - Unregister by plugin on disable — stale listeners are the most likely way to get a crash
@@ -120,20 +122,23 @@ reader/writer implemented in the API — don't add SnakeYAML yet, and don't expo
 
 First events, in this order:
 
-| Event | Cancellable | Hook point |
-| --- | --- | --- |
-| `ServerStartEvent` / `ServerStopEvent` | no | around `Netherrack.start()` / shutdown |
-| `PlayerLoginEvent` | yes | `NetherrackPacketHandler.handle(LoginPacket)`, before play status |
-| `PlayerJoinEvent` | no | `PlayerManager.join(...)` |
-| `PlayerQuitEvent` | no | `PlayerManager.leave(...)` / `onDisconnect()` |
-| `PlayerChatEvent` | yes | `handle(TextPacket)`, before broadcast |
-| `PlayerCommandEvent` | yes | `runCommand(...)`, before `CommandManager.dispatch(...)` |
-| `BlockPlaceEvent` / `BlockBreakEvent` | yes | `BlockInteraction` place/break paths |
+| Event | Cancellable | Hook point | Thread |
+| --- | --- | --- | --- |
+| `ServerStartEvent` / `ServerStopEvent` | no | end of `Netherrack.start()` / start of shutdown | startup / shutdown |
+| `PlayerLoginEvent` | yes | `NetherrackPacketHandler.completeLogin()`, before play status | player's network thread |
+| `PlayerJoinEvent` | no | after `SetLocalPlayerAsInitialized` adds them to the player list | player's network thread |
+| `PlayerQuitEvent` | no | `onDisconnect()`, after removal and save | player's network thread |
+| `PlayerChatEvent` | yes | `handle(TextPacket)`, before broadcast | player's network thread |
+| `PlayerCommandEvent` | yes | `runCommand(...)`, before `CommandManager.dispatch(...)` | player's network thread |
+| `BlockPlaceEvent` / `BlockBreakEvent` | yes | `BlockInteraction` place/break paths | player's network thread |
 
-**Threading rule to settle before implementing:** packet handlers run on Netty threads while
-world state is tick-thread owned. Cancellable events that touch the world must be dispatched on
-the tick thread via the scheduler; chat/command events can run on the packet thread if they only
-read state. Document the thread for every event rather than leaving it implicit.
+**Threading rule:** events are delivered synchronously on the thread performing the action, so
+cancellable events can decide what that thread does next. Server start and stop run on the main
+startup and dedicated shutdown threads; every player and block event runs on that player's
+network thread. Netherrack already mutates world state there during block interactions, so hop-
+ping only the listener to the tick thread would not make world access safer — the longer-term fix
+is to move the block action itself, listeners included, onto one owner thread. Listeners must
+return quickly; a plugin scheduler for slower work comes in Phase 3.
 
 ## Phase 3 — scheduler, commands, permissions
 
@@ -178,7 +183,8 @@ page linked from the README.
 ## Testing
 
 - API repo: plain-Java checks (no new test dependency) for `plugin.yml` parsing, handler
-  ordering by priority, cancellation with `ignoreCancelled`, and unregister-on-disable.
+  ordering by priority and across base classes, cancellation with `ignoreCancelled`, handler
+  failure isolation, and unregister-on-disable. These checks are passing for Phase 2.
 - This repo: extend `tests/run.sh` with a smoke test that loads a stub plugin jar and asserts
   the order `onLoad → onEnable → (events fire) → onDisable`, plus a cancelled event not reaching
   the server action.
@@ -189,7 +195,8 @@ page linked from the README.
 1. Package root: `com.netherrack.api.*`.
 2. API version: independent `0.4.0`, published as the JitPack tag `v0.4.0-SNAPSHOT`.
 3. Plugin config format: API-owned mini-YAML.
-4. Event dispatch threading rule: still to settle before events are implemented.
+4. Event dispatch is synchronous on the thread doing the action; each event's thread is documented
+   in the table above.
 5. `getServer()` is injected through `PluginBase`.
 6. Runtime enable/disable/reload is deferred to Phase 5.
 7. The API jar is published through JitPack.

@@ -1,6 +1,7 @@
 # HelloPlugin
 
-A minimal Maven plugin for Netherrack, showing `onLoad()`, `onEnable()` and `onDisable()`.
+A minimal Maven plugin for Netherrack, showing `onLoad()`, `onEnable()`, `onDisable()` and a
+listener for server and player events.
 
 ## Build
 
@@ -20,9 +21,11 @@ creates `plugins/HelloPlugin/config.yml` and prints lines like these:
 Loaded plugin HelloPlugin v1.0.0 from hello-plugin-1.0.0.jar
 [HelloPlugin] HelloPlugin loaded
 [HelloPlugin] Hello from HelloPlugin! (running on 0.4.0-beta)
+[HelloPlugin] HelloPlugin heard the server start.
 ```
 
-Stopping the server prints `[HelloPlugin] HelloPlugin disabled`.
+Players receive `Welcome, <name>!` when they join. Stopping the server prints both
+`[HelloPlugin] HelloPlugin heard the server stop.` and `[HelloPlugin] HelloPlugin disabled`.
 
 The plugin depends on `NetherrackAPI` with `provided` scope, so its jar does not bundle the API —
 the server supplies it.
