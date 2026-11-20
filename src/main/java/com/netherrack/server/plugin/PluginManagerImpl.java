@@ -1,6 +1,8 @@
 package com.netherrack.server.plugin;
 
+import com.netherrack.api.command.PluginCommand;
 import com.netherrack.api.event.Event;
+import com.netherrack.api.plugin.CommandDescription;
 import com.netherrack.api.event.EventManager;
 import com.netherrack.api.event.Listener;
 import com.netherrack.api.plugin.Plugin;
@@ -9,6 +11,7 @@ import com.netherrack.api.plugin.PluginDescription;
 import com.netherrack.api.plugin.PluginLoadOrder;
 import com.netherrack.api.plugin.PluginManager;
 import com.netherrack.server.Netherrack;
+import com.netherrack.server.command.CommandSender;
 import com.netherrack.server.util.Logger;
 
 import java.io.IOException;
@@ -50,6 +53,7 @@ public final class PluginManagerImpl implements PluginManager {
     private final JavaPluginLoader loader;
     private final EventManager events;
     private final List<PluginContainer> plugins = new ArrayList<>();
+    private final Map<Plugin, List<PluginCommandAdapter>> pluginCommands = new IdentityHashMap<>();
     private boolean discovered;
 
     public PluginManagerImpl(Netherrack server, Path pluginsDir) {
@@ -136,10 +140,11 @@ public final class PluginManagerImpl implements PluginManager {
                 continue;
             }
             setEnabled(container, true);
+            registerCommands(container);
             lifecycle(container, "onEnable", Plugin::onEnable);
             if (container.failed) {
                 setEnabled(container, false);
-                events.unregisterEvents(container.plugin);
+                cleanup(container);
             }
         }
     }
@@ -154,7 +159,7 @@ public final class PluginManagerImpl implements PluginManager {
             }
             setEnabled(container, false);
             lifecycle(container, "onDisable", Plugin::onDisable);
-            events.unregisterEvents(container.plugin);
+            cleanup(container);
             close(container);
         }
     }
@@ -195,6 +200,38 @@ public final class PluginManagerImpl implements PluginManager {
     }
 
     @Override
+    public PluginCommand getCommand(String name, Plugin plugin) {
+        if (name == null || plugin == null) {
+            return null;
+        }
+        for (PluginCommandAdapter adapter : pluginCommands.getOrDefault(plugin, List.of())) {
+            PluginCommand command = adapter.apiCommand();
+            if (command.getName().equalsIgnoreCase(name)) {
+                return command;
+            }
+            for (String alias : command.getAliases()) {
+                if (alias.equalsIgnoreCase(name)) {
+                    return command;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Checks an API permission node for a server command sender. */
+    public boolean hasPermission(CommandSender sender, String node) {
+        if (sender.getPlayer() != null) {
+            return hasPermission(sender.getPlayer(), node);
+        }
+        return server.consoleSender().hasPermission(node);
+    }
+
+    /** Checks an API permission node for a connected player. */
+    public boolean hasPermission(com.netherrack.server.player.Player player, String node) {
+        return server.player(player).hasPermission(node);
+    }
+
+    @Override
     public void registerEvents(Listener listener, Plugin plugin) {
         events.registerEvents(listener, plugin);
     }
@@ -217,6 +254,45 @@ public final class PluginManagerImpl implements PluginManager {
     /** The API-facing server, for EventBridge's conversions. */
     ServerAdapter adapter() {
         return server;
+    }
+
+    /**
+     * Creates each declared command before onEnable(), so a plugin can configure its executor as
+     * soon as it starts. Names already owned by the server or another plugin are left alone:
+     * letting a plugin replace /help by accident would be worse than refusing the command.
+     */
+    private void registerCommands(PluginContainer container) {
+        List<PluginCommandAdapter> adapters = new ArrayList<>();
+        for (CommandDescription description : container.description.getCommands()) {
+            PluginCommand apiCommand = new PluginCommand(container.plugin, description);
+            PluginCommandAdapter adapter = new PluginCommandAdapter(apiCommand, server);
+            adapters.add(adapter);
+
+            List<String> names = new ArrayList<>();
+            names.add(description.getName());
+            names.addAll(description.getAliases());
+            boolean taken = names.stream().anyMatch(name -> server.server().getCommandManager().hasName(name));
+            if (taken) {
+                Logger.warn("Plugin " + container.name() + " could not register command "
+                        + description.getName() + ": that name or an alias is already in use.");
+                continue;
+            }
+            server.server().getCommandManager().register(adapter);
+        }
+        pluginCommands.put(container.plugin, adapters);
+    }
+
+    /** Removes everything a plugin registered or scheduled, whether it stopped cleanly or failed. */
+    private void cleanup(PluginContainer container) {
+        server.pluginScheduler().cancelTasks(container.plugin);
+        List<PluginCommandAdapter> adapters = pluginCommands.remove(container.plugin);
+        if (adapters != null) {
+            for (PluginCommandAdapter adapter : adapters) {
+                server.server().getCommandManager().unregister(adapter);
+            }
+        }
+        server.permissionManager().unregisterPermissions(container.plugin);
+        events.unregisterEvents(container.plugin);
     }
 
     private boolean dependenciesReady(PluginContainer container) {

@@ -445,7 +445,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
         session.sendPacket(player.createAbilities());
         // The commands their client suggests as they type "/": those their level allows.
-        session.sendPacket(AvailableCommands.forLevel(netherrack.getCommandManager(), player.getCommandLevel()));
+        session.sendPacket(AvailableCommands.forPlayer(netherrack.getCommandManager(), netherrack, player));
 
         // Their inventory as they left it, or empty for a new player - and the hotbar slot
         // they had selected.

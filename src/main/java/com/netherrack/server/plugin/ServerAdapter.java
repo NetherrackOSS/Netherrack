@@ -1,9 +1,12 @@
 package com.netherrack.server.plugin;
 
 import com.netherrack.api.Server;
+import com.netherrack.api.command.CommandSender;
 import com.netherrack.api.entity.Player;
+import com.netherrack.api.permission.PermissionManager;
 import com.netherrack.api.plugin.PluginLogger;
 import com.netherrack.api.plugin.PluginManager;
+import com.netherrack.api.scheduler.Scheduler;
 import com.netherrack.api.world.World;
 import com.netherrack.server.Netherrack;
 
@@ -26,6 +29,9 @@ public final class ServerAdapter implements Server {
     private final Netherrack server;
     private final PluginLogger logger;
     private final WorldAdapter worldAdapter;
+    private final PermissionManagerImpl permissionManager = new PermissionManagerImpl();
+    private final PluginScheduler pluginScheduler;
+    private final ConsoleSenderAdapter consoleSender;
     private final Map<UUID, PlayerAdapter> players = new ConcurrentHashMap<>();
     private PluginManagerImpl pluginManager;
 
@@ -33,6 +39,9 @@ public final class ServerAdapter implements Server {
         this.server = server;
         this.logger = new PluginLoggerImpl("Server");
         this.worldAdapter = new WorldAdapter(server);
+        this.pluginScheduler = new PluginScheduler(server.getScheduler());
+        PermissionSubject consolePermissions = new PermissionSubject(() -> true, permissionManager);
+        this.consoleSender = new ConsoleSenderAdapter(this, consolePermissions, "Console");
     }
 
     /** Set once by the manager, after the circular reference between the two is established. */
@@ -72,6 +81,36 @@ public final class ServerAdapter implements Server {
             result.add(player(player));
         }
         return List.copyOf(result);
+    }
+
+    @Override
+    public Scheduler getScheduler() {
+        return pluginScheduler;
+    }
+
+    @Override
+    public PermissionManager getPermissionManager() {
+        return permissionManager;
+    }
+
+    /** The implementation type, for permission checks inside the plugin layer. */
+    PermissionManagerImpl permissionManager() {
+        return permissionManager;
+    }
+
+    /** The implementation type, for cancelling plugin tasks during shutdown. */
+    PluginScheduler pluginScheduler() {
+        return pluginScheduler;
+    }
+
+    /** The single API view of the console, so its permission attachments survive between commands. */
+    CommandSender consoleSender() {
+        return consoleSender;
+    }
+
+    /** Maps the server's command sender to the matching API one. */
+    CommandSender sender(com.netherrack.server.command.CommandSender sender) {
+        return sender.getPlayer() == null ? consoleSender : player(sender.getPlayer());
     }
 
     /** Wraps a server player, replacing the cached adapter if the UUID has been reused by a new login. */

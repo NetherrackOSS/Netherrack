@@ -38,9 +38,22 @@
   block changes are sent back to the client.
 - **Plugin-facing world types:** the API now has small `Player`, `World` and `BlockSnapshot`
   interfaces backed by adapters, so plugins never see protocol or storage classes.
+- **Plugin commands:** a `commands:` block in `plugin.yml` declares names, aliases, descriptions,
+  usage lines and permission nodes. Commands are registered during `onEnable()`, removed when the
+  plugin stops, shown in client suggestions for players who pass the check, and handled in
+  `PluginBase.onCommand()` or by an executor set on `getCommand(name)`. Returning false shows the
+  declared usage line.
+- **Plugin scheduler:** `Server.getScheduler()` runs one-shot, delayed and repeating tasks on the
+  server tick. Tasks have ids and can be cancelled individually or by plugin; all of a plugin's
+  tasks are cancelled on disable. Repeating tasks cannot be given a non-positive period.
+- **Plugin permissions:** plugins can register nodes with allow, deny, operator, non-operator or
+  undefined defaults and attach allow/deny rules to any player or the console. Exact nodes beat
+  `parent.*` wildcards, explicit denials beat defaults, and unregistered nodes still follow a
+  player's vanilla operator status. API permissions add to op levels rather than replacing them.
 - **Example Maven plugin:** `examples/hello-plugin/` builds a jar that demonstrates all three
-  lifecycle callbacks, a generated `config.yml`, and listeners for server, player and chat events.
-  It welcomes players on join and answers `!hello` in chat with a private, configurable greeting.
+  lifecycle callbacks, a generated `config.yml`, listeners for server, player and chat events, a
+  `/hello` command with a registered `hello.use` node, and a delayed scheduler task. It welcomes
+  players on join and answers `!hello` in chat with a private, configurable greeting.
 - **API regression checks:** the separate `NetherrackAPI` repository has plain-Java checks for
   lifecycle, config, event ordering, cancellation, failure isolation and unregister-on-disable.
 
@@ -65,6 +78,7 @@
   implementation phases and the threading rule for each event.
 
 ### Known limitations
-- The plugin API currently covers lifecycle and the first server, player and block events. The
-  scheduler, commands and permissions are still planned, as is runtime plugin
-  enable/disable/reload.
+- Runtime plugin enable, disable and reload are still planned; a plugin jar change needs a restart.
+- API permission changes are checked at command execution, but a player's already-sent client
+  command suggestions are not refreshed until the server sends them again (for example on a change
+  of vanilla command level).

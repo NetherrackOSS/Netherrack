@@ -225,10 +225,11 @@ Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Over
 - **Localization and logging** — English (US) and Brazilian Portuguese console messages,
   customizable per-level console formats and colors, plain log files, and optional verbose
   debug logging that can be reloaded at runtime.
-- **Plugin lifecycle and events** — jars in `plugins/` are read in dependency order and get
-  `onLoad()`, `onEnable()` and `onDisable()` callbacks. Plugins can register listeners with
-  priorities and cancellation for server, player and block events. `examples/hello-plugin/` is a
-  minimal Maven plugin.
+- **Plugin API** — jars in `plugins/` are read in dependency order and get `onLoad()`, `onEnable()`
+  and `onDisable()` callbacks. Plugins can register listeners with priorities and cancellation for
+  server, player and block events, declare commands in `plugin.yml`, schedule delayed and repeating
+  tick tasks, and register permission nodes with wildcard matching and per-player attachments.
+  `examples/hello-plugin/` is a minimal Maven plugin showing all of them.
 
 # 🚧 Current status
 
@@ -239,8 +240,8 @@ include:
 - Compatibility with Bedrock client versions other than 1.26.60.
 - Terrain variety: no caves, ores, flowers, or multiple biomes yet — every generated chunk is
   plains.
-- Plugin scheduler, commands and permissions are still to come; plugins currently get lifecycle
-  callbacks and the first set of server, player and block events.
+- Runtime plugin enable, disable and reload are still to come; restarting is needed after adding,
+  removing or updating a plugin jar.
 - Furnace, stonecutter, and smithing screens and their interactions are not implemented;
   shift-click crafting of a stack is not supported.
 - Items dropped into lava or fire are not destroyed, and death drops in unloaded chunks or

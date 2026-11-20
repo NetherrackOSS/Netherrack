@@ -134,7 +134,7 @@ public class Netherrack {
     public void applyPermission(Player player, Permission permission) {
         player.setPermission(permission, commandLevelFor(permission));
         player.sendAbilities();
-        player.getSession().sendPacket(AvailableCommands.forLevel(commandManager, player.getCommandLevel()));
+        player.getSession().sendPacket(AvailableCommands.forPlayer(commandManager, this, player));
     }
 
     public ItemEntities getItemEntities() {

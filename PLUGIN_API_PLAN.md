@@ -2,8 +2,8 @@
 
 This is a design document for a Nukkit-like plugin API split across two repositories:
 `NetherrackAPI` holds the contracts plugins compile against, and this repository implements
-those contracts and fires the events. Phases 1 (lifecycle) and 2 (events) are implemented; the
-remaining phases are still plans.
+those contracts and fires the events. Phases 1 (lifecycle), 2 (events) and 3 (scheduler, commands
+and permissions) are implemented; the remaining phases are still plans.
 
 ## Goals and constraints
 
@@ -40,8 +40,10 @@ src/main/java/com/netherrack/api/
   entity/    Player
   world/     World, BlockSnapshot
   scheduler/ Scheduler, TaskHandler
-  command/   Command, CommandSender, PluginCommand
-  permission/ Permissible, PermissionAttachment
+  command/   Command, CommandExecutor, CommandSender, PluginCommand
+  permission/ Permissible, Permission, PermissionAttachment, PermissionDefault,
+              PermissionManager, PermissionState
+  plugin/    (also CommandDescription for plugin.yml commands)
   Server
 src/test/java/...
 ```
@@ -58,6 +60,12 @@ src/main/java/com/netherrack/server/plugin/
   WorldAdapter           implements com.netherrack.api.world.World over server World
   EventBridge            helpers to call events from packet handlers and startup code
   PluginCommandAdapter   bridges API Command to server CommandManager
+  PluginScheduler        adds ids, repeating tasks and cancellation to the tick scheduler
+  PluginTask             one tracked plugin task
+  PermissionManagerImpl  registry of declared permission nodes
+  PermissionSubject      resolves attachments, defaults, wildcards and operator status
+  PlayerAdapter          also acts as the player's API command sender and permissible
+  ConsoleSenderAdapter   the console's API command sender and permissible
 ```
 
 The existing `Scheduler`, `CommandManager`, `PlayerManager`, `World`, `Logger` and
@@ -140,18 +148,24 @@ ping only the listener to the tick thread would not make world access safer — 
 is to move the block action itself, listeners included, onto one owner thread. Listeners must
 return quickly; a plugin scheduler for slower work comes in Phase 3.
 
-## Phase 3 — scheduler, commands, permissions
+## Phase 3 — scheduler, commands, permissions (implemented)
 
-- The current `Scheduler` only supports one-shot `schedule(int ticks, Runnable)`. Add repeating
-  tasks and cancellation ids in the server, then expose `Scheduler` / `TaskHandler` in the API:
-  `runTask`, `runTaskLater`, `runTaskTimer`, `cancelTask`. Every task records its owning plugin
-  so `onDisable()` can cancel them all.
-- API `Command` and `CommandSender` are independent of the server versions, with an adapter in
-  `PluginCommandAdapter`. `plugin.yml`'s `commands:` block registers aliases, descriptions and
-  permissions automatically.
-- API `Permissible.hasPermission(String)` and `PermissionAttachment` map onto the existing
-  `Permission` / `Permissions` classes. Keep the server's permission level system intact —
-  API permission strings are an additional layer, not a replacement.
+- The server's tick scheduler still only knows one-shot `schedule(int ticks, Runnable)`; the
+  plugin layer wraps it with ids, repeating tasks and cancellation. The API exposes `Scheduler`
+  and `TaskHandler`, so plugins call `runTask`, `runTaskLater` or `runTaskTimer` and can cancel by
+  handle or id. Every task records its owning plugin, and disable cancels all of its tasks before
+  closing the jar. Tasks always run on the single server tick thread.
+- API `Command` and `CommandSender` are independent of the server's own versions. A
+  `PluginCommandAdapter` adapts declared commands to `CommandManager`, while player adapters and
+  one shared console adapter act as command senders. The alias used is passed to the executor as
+  `label`; returning false prints the usage line from `plugin.yml`. Name conflicts are refused
+  rather than replacing a built-in command.
+- API permissions are an additional layer on top of vanilla op levels. `PermissionSubject`
+  resolves in this order: exact attachment rule, longest matching `parent.*` attachment rule,
+  registered default, then operator status. Exact rules beat wildcards regardless of attachment
+  age, and later attachments win ties. Registered defaults may be ALLOW, DENY, OPERATOR,
+  NOT_OPERATOR or UNDEFINED. `PermissionManager` is only a node registry; a permission manager
+  plugin changes players through `PermissionAttachment`.
 
 ## Phase 4 — player, world and block API
 
@@ -184,7 +198,8 @@ page linked from the README.
 
 - API repo: plain-Java checks (no new test dependency) for `plugin.yml` parsing, handler
   ordering by priority and across base classes, cancellation with `ignoreCancelled`, handler
-  failure isolation, and unregister-on-disable. These checks are passing for Phase 2.
+  failure isolation, unregister-on-disable, command declarations, permission attachments and
+  the tri-state permission model. These checks are passing for Phases 1-3.
 - This repo: extend `tests/run.sh` with a smoke test that loads a stub plugin jar and asserts
   the order `onLoad → onEnable → (events fire) → onDisable`, plus a cancelled event not reaching
   the server action.

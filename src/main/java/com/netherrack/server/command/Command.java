@@ -56,5 +56,22 @@ public interface Command {
         return 0;
     }
 
+    /**
+     * An API permission node that also gates this command, or an empty string when the command
+     * level above is the only requirement. Plugin commands use this so permission manager plugins
+     * can allow or deny them without changing the built-in op-level system.
+     */
+    default String getPermissionNode() {
+        return "";
+    }
+
     void execute(Netherrack server, CommandSender sender, String[] args);
+
+    /**
+     * Runs the command, including the name the sender actually typed so plugins can see which
+     * alias was used. Built-in commands keep using the simpler overload.
+     */
+    default void execute(Netherrack server, CommandSender sender, String[] args, String label) {
+        execute(server, sender, args);
+    }
 }

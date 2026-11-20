@@ -1,5 +1,6 @@
 package com.netherrack.server.command;
 
+import com.netherrack.server.Netherrack;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandData;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandEnumConstraint;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandEnumData;
@@ -14,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * The commands a player's client suggests as they type "/", with each one's description
@@ -34,9 +36,26 @@ public final class AvailableCommands {
     }
 
     public static AvailableCommandsPacket forLevel(CommandManager commands, int permissionLevel) {
+        return forLevel(commands, permissionLevel, command -> true);
+    }
+
+    /**
+     * The command list for one player. API permission nodes can grant or deny individual plugin
+     * commands independently of the player's vanilla command level, so both are checked here.
+     */
+    public static AvailableCommandsPacket forPlayer(CommandManager commands, Netherrack server,
+                                                    com.netherrack.server.player.Player player) {
+        return forLevel(commands, player.getCommandLevel(), command -> {
+            String node = command.getPermissionNode();
+            return node.isBlank() || server.getPluginManager().hasPermission(player, node);
+        });
+    }
+
+    private static AvailableCommandsPacket forLevel(CommandManager commands, int permissionLevel,
+                                                    Predicate<Command> allowed) {
         AvailableCommandsPacket packet = new AvailableCommandsPacket();
         for (Command command : commands.getCommands()) {
-            if (command.getPermissionLevel() <= permissionLevel) {
+            if (command.getPermissionLevel() <= permissionLevel && allowed.test(command)) {
                 packet.getCommands().add(toCommandData(command));
             }
         }
