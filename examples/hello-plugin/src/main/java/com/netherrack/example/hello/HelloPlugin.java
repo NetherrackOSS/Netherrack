@@ -18,7 +18,8 @@ import java.util.Locale;
  * <p>
  * The greeting is kept in the plugin's config.yml, so the first start writes a file that can be
  * edited without rebuilding the jar. The listener demonstrates the events a plugin can hear, and
- * /where reads a player's position, game mode and the block beneath them.
+ * /where reads a player's position, game mode and the block beneath them, then teleports or copies
+ * that block when asked.
  */
 public final class HelloPlugin extends PluginBase {
 
@@ -53,7 +54,7 @@ public final class HelloPlugin extends PluginBase {
         return true;
     }
 
-    /** /where [up] shows where the player is; "up" also demonstrates API teleporting. */
+    /** /where [up|copy] shows where the player is; the options demonstrate teleporting and setBlock. */
     private boolean where(CommandSender sender, String[] args) {
         Player player = sender.getPlayer();
         if (player == null) {
@@ -67,8 +68,13 @@ public final class HelloPlugin extends PluginBase {
             location = player.getLocation();
         }
         BlockPosition feet = location.toBlockPosition();
-        BlockSnapshot below = player.getWorld().getBlock(
-                new BlockPosition(feet.getX(), feet.getY() - 1, feet.getZ()));
+        BlockPosition underfoot = new BlockPosition(feet.getX(), feet.getY() - 1, feet.getZ());
+        BlockSnapshot below = player.getWorld().getBlock(underfoot);
+        if (args.length > 0 && args[0].equalsIgnoreCase("copy")) {
+            BlockPosition beside = new BlockPosition(underfoot.getX() + 1, underfoot.getY(), underfoot.getZ());
+            player.getWorld().setBlock(beside, below);
+            sender.sendMessage("Copied " + (below == null ? "air" : below) + " to " + beside + ".");
+        }
         sender.sendMessage("Position: " + location + "; game mode: "
                 + player.getGameMode().name().toLowerCase(Locale.ROOT));
         sender.sendMessage("Standing on: " + (below == null ? "air" : below));

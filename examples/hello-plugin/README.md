@@ -30,7 +30,8 @@ from `config.yml` privately and cancels the public chat message. `/hello` (or `/
 greeting as command output; its `hello.use` node is registered with an allow default, so any player
 can run it. `/where` (or `/loc`) reports the player's feet position, facing, game mode and the block
 underfoot from a `BlockSnapshot`; `/where up` teleports them five blocks higher while keeping their
-facing. A one-tick delayed task prints `[HelloPlugin] HelloPlugin's delayed task ran.` after
+facing, and `/where copy` writes that snapshot into the block beside them to demonstrate `setBlock`.
+A one-tick delayed task prints `[HelloPlugin] HelloPlugin's delayed task ran.` after
 startup. Stopping the server prints both `[HelloPlugin] HelloPlugin heard the server stop.` and
 `[HelloPlugin] HelloPlugin disabled`.
 

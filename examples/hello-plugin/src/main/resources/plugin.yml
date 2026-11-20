@@ -14,5 +14,5 @@ commands:
   where:
     description: Shows your position, game mode and the block underfoot
     aliases: [loc]
-    usage: /where [up]
+    usage: /where [up|copy]
     permission: hello.use

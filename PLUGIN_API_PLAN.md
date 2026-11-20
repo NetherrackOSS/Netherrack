@@ -182,8 +182,8 @@ return quickly; a plugin scheduler for slower work comes in Phase 3.
   state, so a snapshot read from a world can be written back without losing its variant.
 - `BlockSnapshot` is immutable and now carries the block's vanilla properties as well as its name
   and state hash. NBT bit properties become booleans; integers and strings keep their values.
-  `World.setBlock` changes saved world data but does not send a block-update packet to clients that
-  already have the chunk yet.
+  `World.setBlock` broadcasts an `UpdateBlockPacket` with the same flags as ordinary placement and
+  breaking, so clients that have the chunk see the change immediately.
 - Calls from listeners happen on the player's network thread, where the action itself runs. Use the
   Phase 3a scheduler to move slower work onto the tick thread; don't hold a live server object in a
   plugin. Avoid designing the entire game in the API before there are plugins using it.

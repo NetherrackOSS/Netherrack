@@ -11,7 +11,8 @@ import org.cloudburstmc.math.vector.Vector3i;
  * <p>
  * Blocks cross the boundary as immutable snapshots rather than the server's live Block objects.
  * Snapshots carry the block's exact vanilla properties, so setting one restores the state a plugin
- * read earlier instead of just its default variant.
+ * read earlier instead of just its default variant. Changes are broadcast to clients that have the
+ * chunk, using the same path as ordinary placement and breaking.
  */
 final class WorldAdapter implements World {
 
@@ -44,7 +45,11 @@ final class WorldAdapter implements World {
 
     @Override
     public void setBlock(int x, int y, int z, BlockSnapshot block) {
-        serverWorld().setBlock(x, y, z, BlockSnapshots.resolve(block));
+        com.netherrack.server.block.Block resolved = BlockSnapshots.resolve(block);
+        serverWorld().setBlock(x, y, z, resolved);
+        // The same broadcast placement and breaking use, so clients with this chunk see the
+        // change immediately instead of keeping their predicted/old state until they reload.
+        server.getPlayerManager().broadcastBlock(Vector3i.from(x, y, z), resolved);
     }
 
     @Override

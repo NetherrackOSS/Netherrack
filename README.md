@@ -243,8 +243,6 @@ include:
   plains.
 - Runtime plugin enable, disable and reload are still to come; restarting is needed after adding,
   removing or updating a plugin jar.
-- Plugin `World.setBlock()` changes saved world data but does not yet send a block-update packet to
-  clients that already have the chunk; the new state appears when they reload the chunk.
 - Furnace, stonecutter, and smithing screens and their interactions are not implemented;
   shift-click crafting of a stack is not supported.
 - Items dropped into lava or fire are not destroyed, and death drops in unloaded chunks or

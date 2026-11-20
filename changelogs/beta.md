@@ -52,13 +52,14 @@
   player's vanilla operator status. API permissions add to op levels rather than replacing them.
 - **Player, world and block API:** plugins can read a player's feet position and facing, teleport
   them with rotation, read or change their game mode, and read or replace blocks as immutable
-  snapshots. Snapshots carry exact vanilla state properties, and `World` accepts `BlockPosition`
-  coordinates alongside x/y/z.
+  snapshots. Snapshots carry exact vanilla state properties, `World` accepts `BlockPosition`
+  coordinates alongside x/y/z, and `setBlock()` sends the change to clients that have the chunk.
 - **Example Maven plugin:** `examples/hello-plugin/` builds a jar that demonstrates all three
   lifecycle callbacks, a generated `config.yml`, listeners for server, player and chat events,
   `/hello` and `/where` commands with a registered `hello.use` node, and a delayed scheduler task.
   It welcomes players on join, answers `!hello` in chat with a private, configurable greeting, and
-  uses `/where` to show location, game mode and the block underfoot.
+  uses `/where` to show location, game mode and the block underfoot; `/where up` and `/where copy`
+  demonstrate teleporting and writing a block snapshot back to the world.
 - **API regression checks:** the separate `NetherrackAPI` repository has plain-Java checks for
   lifecycle, config, event ordering, cancellation, failure isolation, unregister-on-disable,
   commands, permissions, locations, game modes and block state properties.
@@ -85,8 +86,6 @@
 
 ### Known limitations
 - Runtime plugin enable, disable and reload are still planned; a plugin jar change needs a restart.
-- Plugin `World.setBlock()` does not yet send a block-update packet to clients that already have the
-  chunk, so they only see the change after the chunk reloads.
 - API permission changes are checked at command execution, but a player's already-sent client
   command suggestions are not refreshed until the server sends them again (for example on a change
   of vanilla command level).
