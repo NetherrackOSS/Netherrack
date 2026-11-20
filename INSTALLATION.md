@@ -1,75 +1,17 @@
 # Installation Instructions
 
-This guide covers installing and launching **Netherrack v0.4.0-beta**. For an overview of
-the project and its features, see the [README](README.md).
-
-## Requirements
-
-- **Java 17 or newer** on the server machine (`java --version` to check)
-- **Minecraft: Bedrock Edition 1.26.60** on the client machine — other versions are not
-  supported, since Netherrack uses the NetherNet transport that replaced RakNet in that
-  release
-- A free **port 19132** (configurable in `server.properties`)
-- **Git**, only if you are building from source
-
-The NetherNet native WebRTC library is bundled in the JAR; you do not need to install it
-separately.
-
-## Install from a release
-
-1. Download the latest JAR from the [Releases](https://github.com/NetherrackOSS/Netherrack/releases)
-   page.
-2. Move the JAR into a dedicated directory, for example `netherrack-server`, and rename it to
-   `netherrack.jar` if needed.
-3. Launch it from that directory:
+To download and install Netherrack, head to the [Releases](https://github.com/NetherrackOSS/Netherrack/releases) page for the GitHub repository, download the latest JAR file, move the JAR file to another directory (example: ``netherrack-server``), then launch it via:
 
 ```bash
 java -jar netherrack.jar
 ```
 
-If the native transport reports memory-access or native-access errors, use the JVM flags from
-the included start scripts:
+You can also launch Netherrack via a ``start.sh``, ``start.bat``, or a ``start.cmd`` script.
 
-```bash
-java --sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED -jar netherrack.jar
-```
-
-You can also use the bundled scripts instead of typing the command yourself: `start.sh` on
-Linux/macOS, or `start.bat` on Windows. Both expect `netherrack.jar` in the same directory and
-already include the flags above.
-
-## Build from source
-
-Clone the repository and build with the Maven wrapper — no separate Maven installation is
-needed:
-
-```bash
-git clone https://github.com/NetherrackOSS/Netherrack.git
-cd Netherrack
-```
-
-```bash
-bash mvnw clean package    # Linux/macOS
-mvnw.cmd clean package     # Windows
-```
-
-The shaded, runnable JAR is written to `target/netherrack.jar`. Copy it to a dedicated server
-directory before running it, so generated config, logs, and worlds stay together.
-
-## First run
-
-On the first launch, when `server.properties` does not exist yet, an interactive setup wizard
-runs before the server starts:
-
-1. Choose a console language: `en-US` (English) or `pt-BR` (Português). Press Enter for
-   `en-US`.
-2. Read the GPLv3 notice and accept the license with `y` (also accepts `yes`, `s`, or `sim`).
-   The server cannot start without accepting it.
-
-You should see something like this:
+After running ``java -jar netherrack.jar`` or launching it via a start script for the first time, you should see something like this:
 
 ```
-[16:01:07] [main] [INFO] Starting Netherrack server version 0.4.0-beta
+[16:01:07] [main] [INFO] Starting Netherrack server version 0.1.0-alpha
 [16:01:07] [main] [INFO] First-time setup detected. Launching setup wizard...
 
 ═══════════════════════════════════════════════════════════════
@@ -82,38 +24,5 @@ Welcome! Please select a language first.
   [en-US] English (United States)
   [pt-BR] Português (Brasil)
 
-» Language [en-US]:
+» Language [en-US]: 
 ```
-
-After accepting the license, the wizard finishes and the server generates:
-
-| File | Purpose |
-| --- | --- |
-| `server.properties` | Server and world settings |
-| `netherrack.yml` | Netherrack-specific settings |
-| `permissions.json` | Operator/permission data |
-| `nethernet-identity.pem` | Persistent NetherNet server identity |
-| `logs/latest.log` | Server log |
-| `worlds/Bedrock level/` | The default world |
-
-## Connecting
-
-Open Bedrock Edition 1.26.60 and add a server using the machine's IP address and port
-`19132`. For a server running on the same machine, use `127.0.0.1` as the address.
-
-To change the port or IP, stop the server, edit `server-port` / `server-ip` in
-`server.properties`, and start it again.
-
-## Troubleshooting
-
-- **`java` is not recognized / wrong version:** Install Java 17 or newer and check with
-  `java --version`.
-- **Port already in use:** Change `server-port` in `server.properties` to a free port, then
-  restart the server.
-- **Native library or illegal-access errors:** Use `start.sh` / `start.bat`, or add the JVM
-  flags shown above to your launch command.
-- **Client cannot connect:** Confirm the client is Bedrock 1.26.60, the IP and port are
-  correct, and any firewall allows the connection.
-- **Setup wizard appears again:** It only runs when `server.properties` is missing; running
-  from a different directory creates a fresh server there. Always launch from the directory
-  containing your config and `worlds/`.
