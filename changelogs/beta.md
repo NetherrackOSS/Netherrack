@@ -37,7 +37,8 @@
 - **Plugin-facing world types:** the API now has small `Player`, `World` and `BlockSnapshot`
   interfaces backed by adapters, so plugins never see protocol or storage classes.
 - **Example Maven plugin:** `examples/hello-plugin/` builds a jar that demonstrates all three
-  lifecycle callbacks, a generated `config.yml`, and a listener for server and player events.
+  lifecycle callbacks, a generated `config.yml`, and listeners for server, player and chat events.
+  It welcomes players on join and answers `!hello` in chat with a private, configurable greeting.
 - **API regression checks:** the separate `NetherrackAPI` repository has plain-Java checks for
   lifecycle, config, event ordering, cancellation, failure isolation and unregister-on-disable.
 

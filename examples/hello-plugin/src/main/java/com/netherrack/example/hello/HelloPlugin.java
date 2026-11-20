@@ -10,6 +10,8 @@ import com.netherrack.api.plugin.PluginBase;
  */
 public final class HelloPlugin extends PluginBase {
 
+    private String greeting = "Hello from HelloPlugin!";
+
     @Override
     public void onLoad() {
         getLogger().info("HelloPlugin loaded");
@@ -17,11 +19,16 @@ public final class HelloPlugin extends PluginBase {
 
     @Override
     public void onEnable() {
-        String greeting = getConfig().get("greeting", "Hello from HelloPlugin!");
+        greeting = getConfig().get("greeting", greeting);
         getConfig().set("greeting", greeting);
         saveConfig();
         getLogger().info(greeting + " (running on " + getServer().getVersion() + ")");
         getServer().getPluginManager().registerEvents(new HelloListener(this), this);
+    }
+
+    /** The configured greeting, used both at startup and when a player chats "!hello". */
+    String greeting() {
+        return greeting;
     }
 
     @Override
