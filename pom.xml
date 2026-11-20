@@ -60,9 +60,22 @@
                 <enabled>true</enabled>
             </snapshots>
         </repository>
+        <!-- JitPack builds the plugin API straight from the NetherrackAPI git tag. -->
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
     </repositories>
 
     <dependencies>
+        <!-- Plugin API contracts. JitPack publishes this from the v0.4.0-SNAPSHOT tag, and the
+             shade plugin below bundles it into netherrack.jar so plugins use the server's copy. -->
+        <dependency>
+            <groupId>com.github.NetherrackOSS</groupId>
+            <artifactId>NetherrackAPI</artifactId>
+            <version>v0.4.0-SNAPSHOT</version>
+        </dependency>
+
         <!-- NetherNet transport (Netty-based), replacing RakNet. -->
         <dependency>
             <groupId>org.cloudburstmc.netty</groupId>

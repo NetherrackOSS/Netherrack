@@ -1,8 +1,9 @@
 # Plugin API plan
 
-This is a design document, not an implementation. It describes a Nukkit-like plugin API split
-across two repositories: `NetherrackAPI` holds the contracts plugins compile against, and this
-repository implements those contracts and fires the events. Nothing here is written yet.
+This is a design document for a Nukkit-like plugin API split across two repositories:
+`NetherrackAPI` holds the contracts plugins compile against, and this repository implements
+those contracts and fires the events. Phase 1 (lifecycle) is implemented; the remaining phases
+are still plans.
 
 ## Goals and constraints
 
@@ -164,8 +165,9 @@ page linked from the README.
 
 ## Build and release workflow
 
-- API repo: `bash mvnw clean install` locally; server `pom.xml` gets
-  `com.netherrack:netherrack-api:<version>` and the existing shade plugin bundles it.
+- API repo is published through JitPack as
+  `com.github.NetherrackOSS:NetherrackAPI:v0.4.0-SNAPSHOT`; the server declares that artifact and
+  the shade plugin bundles it into `netherrack.jar`.
 - Version the API independently with `major.minor.patch` and validate `api-version` in
   `plugin.yml` by major/minor. During beta, breaking changes bump the minor version and are
   called out in the changelog.
@@ -182,16 +184,15 @@ page linked from the README.
   the server action.
 - Verify a real server start with one example plugin before calling any phase done.
 
-## Decisions to settle before Phase 1
+## Decisions
 
-1. Package root: `com.netherrack.api.*` (proposed) or something else.
-2. API version numbers: independent semver, or the server's `0.4.0-beta` version string.
-3. Plugin config format: API-owned mini-YAML (proposed), Java properties, or a new YAML
-   dependency.
-4. Event dispatch threading rule, especially for cancellable world events.
-5. Whether `getServer()` is injected through `PluginBase` (proposed) or a static accessor.
-6. Enable/disable/reload of plugins at runtime in v1, or defer to Phase 5.
-7. Where the API jar is published: local `mvnw install` for now, GitHub Packages later.
+1. Package root: `com.netherrack.api.*`.
+2. API version: independent `0.4.0`, published as the JitPack tag `v0.4.0-SNAPSHOT`.
+3. Plugin config format: API-owned mini-YAML.
+4. Event dispatch threading rule: still to settle before events are implemented.
+5. `getServer()` is injected through `PluginBase`.
+6. Runtime enable/disable/reload is deferred to Phase 5.
+7. The API jar is published through JitPack.
 
 ## Effort outline
 

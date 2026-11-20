@@ -150,9 +150,40 @@ Open Bedrock Edition on the same machine (or network) and connect to the server 
 | Section | Key | Default | Meaning |
 | --- | --- | --- | --- |
 | `logs` | `debug` | `false` | Write every packet and debug detail to `logs/latest.log` |
+| `logging` | `info-format`, `warn-format`, `error-format`, `debug-format` | `[{time}] [{thread}] [{level}] {message}` | Console pattern for each level |
+| `logging` | `format` | same as above | Fallback for levels without their own pattern |
+| `logging` | `prefix`, `suffix` | empty | Text inserted by `{prefix}` and `{suffix}` |
+| `logging` | `<level>-prefix`, `<level>-suffix` | shared values | Per-level overrides for those placeholders |
+| `logging` | `time-format` | `HH:mm:ss` | Java time pattern used for `{time}` |
+| `logging` | `date-format` | `yyyy-MM-dd` | Java date pattern used for `{date}` |
+| `logging` | `colors` | `auto` | `auto` detects a terminal; `true` and `false` force colors on or off |
+| `logging` | `console-debug` | `false` | Show DEBUG lines on the console using `debug-format` |
+| `logging` | `<level>-enabled` | `true` | Hide a level on the console while keeping it in the log file |
+| `labels` | `timestamp-color`, `thread-color`, `info-color`, `warn-color`, `error-color`, `debug-color` | `cyan`, `yellow`, `blue`, `red`, `bright-red`, `null`, `null` | Named color for each label; `null` leaves it plain |
+| `labels` | `bracket-color` | `null` | Named color for brackets around placeholders; `null` leaves them plain |
 | `messages` | `server-shutdown` | `Server closed` | Message shown to players when the server closes |
 | `messages` | `server-whitelist` | `You are not whitelisted on this server!` | Configured message for turned-away players; whitelist enforcement is not implemented yet |
 | `level` | `preset-type` | `Classic Flat` | Flat preset used for new `flat` worlds |
+
+The `logging` and `labels` sections are read before the server prints its first line, so the
+startup messages use them too. If either section or a key is missing, that setting falls back
+to the default shown above. The `reload` command re-reads them without a restart.
+
+Formats have two kinds of placeholder. `{time}`, `{date}`, `{millis}`, `{thread}`, `{level}`,
+`{message}`, `{prefix}` and `{suffix}` insert values. `<name>` inserts a color, a style
+(`<bold>`, `<italic>`, `<underline>`, `<reset>`), or any of those same values — for example
+`[<yellow>{time}] <bold>{level}<reset> {message}`. `<null>` inserts nothing. These work
+alongside `labels.*`, and a trailing reset is added when needed so an inline color can't carry
+into the console prompt.
+
+Label colors are names: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`,
+`gray`, and `bright-` variants of each, plus `purple` and `grey` as aliases. Hex values such as
+`#ff8800` work too. Raw ANSI escape sequences written as `"\u001B[36m"` still work. With
+`colors: auto`, escape codes are dropped when output is piped to a file.
+
+DEBUG lines go only to the log file unless `console-debug: true` is set, which makes them use
+`debug-format` on the console too. Per-level `*-enabled` keys hide a level from the console
+without removing it from the log file.
 
 Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Overworld`,
 `Snowy Kingdom`, `Bottomless Pit`, `Desert`, `Redstone Ready`, and `The Void`.
@@ -186,10 +217,15 @@ Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Over
   | `kill` | — | 2 | Kill a player |
   | `tp` | — | 2 | Teleport a player (players or coordinates, with `~` relative support) |
   | `op` / `deop` | — | 3 | Grant or remove operator status |
+  | `reload` | `rl` | 4 | Reload logging settings from `netherrack.yml` |
+  | `plugins` | `pl` | 0 | List installed plugins |
   | `stop` | — | 4 | Stop the server gracefully |
 
 - **Localization and logging** — English (US) and Brazilian Portuguese console messages,
-  colored log output, and optional verbose debug logging.
+  customizable per-level console formats and colors, plain log files, and optional verbose
+  debug logging that can be reloaded at runtime.
+- **Plugin lifecycle** — jars in `plugins/` are read in dependency order and get `onLoad()`,
+  `onEnable()` and `onDisable()` callbacks. `examples/hello-plugin/` is a minimal Maven plugin.
 
 # 🚧 Current status
 
@@ -200,7 +236,8 @@ include:
 - Compatibility with Bedrock client versions other than 1.26.60.
 - Terrain variety: no caves, ores, flowers, or multiple biomes yet — every generated chunk is
   plains.
-- Plugin API and many gameplay systems are still to come.
+- Plugin events, scheduler, commands and permissions are still to come; for now plugins only get
+  the three lifecycle callbacks.
 - Furnace, stonecutter, and smithing screens and their interactions are not implemented;
   shift-click crafting of a stack is not supported.
 - Items dropped into lava or fire are not destroyed, and death drops in unloaded chunks or
