@@ -65,6 +65,16 @@ runs before the server starts:
    `en-US`.
 2. Read the GPLv3 notice and accept the license with `y` (also accepts `yes`, `s`, or `sim`).
    The server cannot start without accepting it.
+3. Choose whether to enter the server setup steps. Press Enter for defaults, or answer `n` to
+   configure them.
+4. Enter the MOTD, port, default gamemode and maximum player count. Press Enter at any prompt
+   to keep the default shown. The gamemode menu accepts `0` Survival, `1` Creative,
+   `2` Adventure or `3` Spectator.
+5. Review the local and external addresses, then press Enter to start. The external lookup uses
+   a public IP service and is skipped with a "not detected" message if unavailable.
+
+If stdin is piped instead of coming from a terminal, the optional setup prompts are skipped so
+scripted launches don&rsquo;t lose console commands.
 
 You should see something like this:
 
@@ -85,7 +95,7 @@ Welcome! Please select a language first.
 » Language [en-US]:
 ```
 
-After accepting the license, the wizard finishes and the server generates:
+After the wizard finishes, the server generates:
 
 | File | Purpose |
 | --- | --- |

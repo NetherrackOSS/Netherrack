@@ -1,6 +1,11 @@
 # v0.4.0-beta (unreleased)
 
 ### Added
+- **Expanded setup wizard:** after the language and license screens, a first run can now skip
+  the remaining questions or set the server MOTD, port, default gamemode and maximum player
+  count before a final summary shows the local and externally detected addresses. The public
+  IP lookup is best-effort and only runs in an interactive terminal; piped launches keep the
+  old behavior so console commands aren't swallowed.
 - **Customizable console logging:** `netherrack.yml` now has `logging` and `labels` sections that
   control per-level formats, colors, prefixes, suffixes, timestamps and console visibility. The
   sections are read before the first startup line, and any missing section or key falls back to

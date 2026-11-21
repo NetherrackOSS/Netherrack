@@ -86,6 +86,19 @@ The first launch (when `server.properties` is missing) runs an interactive setup
 1. Choose a console language: `en-US` (English) or `pt-BR` (Português). Press Enter for `en-US`.
 2. Read the GPLv3 notice and accept the license with `y` (or `yes` / `s` / `sim`). The server
    will not start without accepting it.
+3. Choose whether to enter the server setup steps. Press Enter to use the defaults, or answer
+   `n` to configure them.
+4. Enter the server MOTD (`server-name`), or press Enter for `Netherrack Server`.
+5. Enter the server port (`server-port`), or press Enter for `19132`.
+6. Pick the default gamemode (`gamemode`): `0` Survival, `1` Creative, `2` Adventure or
+   `3` Spectator. Names and aliases work too.
+7. Enter the maximum player count (`max-players`), or press Enter for `20`.
+8. Review the local and external addresses, then press Enter to start. The external address is
+   a short lookup through a public IP service; if it fails, the summary says so. It is only a
+   convenience &mdash; nothing is sent anywhere else.
+
+If standard input is piped rather than attached to a terminal, steps 3&ndash;8 are skipped and
+the defaults are used. This keeps scripted launches from swallowing console commands.
 
 You should see something like this:
 
@@ -104,6 +117,59 @@ Welcome! Please select a language first.
   [pt-BR] Português (Brasil)
 
 » Language [en-US]:
+```
+
+The optional configuration screens look like this:
+
+```
+═══════════════════════════════════════════════════════════════
+                    Setup Configuration
+═══════════════════════════════════════════════════════════════
+
+You can choose to skip the setup wizard and use default configuration settings.
+
+[*] All of these settings can be modified later in the server.properties configuration file.
+
+» Do you want to skip the setup wizard? (Y/n): n
+✓ Proceeding with setup...
+
+═══════════════════════════════════════════════════════════════
+                   Server Configuration
+═══════════════════════════════════════════════════════════════
+
+» Enter server MOTD (default: Netherrack Server):
+✓ Server MOTD set to: Netherrack Server
+
+───────────────────────────────────────────────────────────────
+» Enter server port (default: 19132):
+✓ Server port set to: 19132
+
+───────────────────────────────────────────────────────────────
+[*] Available gamemodes:
+» [0] Survival
+» [1] Creative
+» [2] Adventure
+» [3] Spectator
+
+» Enter default gamemode (default: 0 (Survival)):
+✓ Default gamemode set to: Survival
+
+───────────────────────────────────────────────────────────────
+» Maximum number of players [20]:
+✓ Maximum players: 20
+
+═══════════════════════════════════════════════════════════════
+                  Configuration complete!
+═══════════════════════════════════════════════════════════════
+
+✓ Your server is now configured and available at:
+
+» Local Server Address: 192.168.1.7:19132
+» External Server Address: 203.0.113.7:19132
+
+═══════════════════════════════════════════════════════════════
+
+Press ENTER to start the server...
 ```
 
 The first run creates:

@@ -49,6 +49,7 @@ import org.jline.reader.UserInterruptException;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -73,6 +74,7 @@ public class Netherrack {
     private ChunkViews chunkViews;
     private TripwireSensor tripwires;
     private final Scheduler scheduler = new Scheduler();
+    private Map<String, String> wizardSettings = Map.of();
     private Permissions permissions;
     private ScheduledExecutorService ticker;
     private ScheduledExecutorService autosave;
@@ -190,20 +192,21 @@ public class Netherrack {
         String language = Lang.DEFAULT_CODE;
         if (!Files.exists(Path.of("server.properties"))) {
             Logger.info("First-time setup detected. Launching setup wizard...");
-            String chosen = new SetupWizard().run();
-            if (chosen == null) {
+            SetupWizard.Result setup = new SetupWizard().run();
+            if (setup == null) {
                 Logger.error("Setup wizard did not accept the license. Startup has been cancelled.");
                 System.exit(1);
                 return;
             }
-            language = chosen;
+            language = setup.language();
+            wizardSettings = setup.settings();
         }
 
         // Set before config.load() too, so messages like "server.properties not found"
         // (logged from inside that call, on a first run) are already in the right language.
         Lang.current = new Lang(language);
 
-        config.load(language);
+        config.load(language, wizardSettings);
         Lang.current = new Lang(config.get("language", language));
         Lang lang = Lang.current;
         settings.load(config);
