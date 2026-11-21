@@ -198,8 +198,8 @@ Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Over
 - **Chunk streaming and persistence** — chunks load as players move, worlds save to LevelDB,
   and the server autosaves every 30 seconds.
 - **Players and gameplay** — login, movement, chat, join/leave messages, four game modes,
-  health and hunger, eating, block breaking and placement, drops, and item entities that can
-  be picked up and despawn over time.
+  health and hunger, eating, block breaking and placement, middle-click pick block, drops, and
+  item entities that can be picked up and despawn over time.
 - **Combat** — player-versus-player hits with vanilla-like reach, weapon damage and knockback,
   invulnerability ticks, creative/spectator protections, and dropped inventories on death.
 - **Inventory and crafting** — the 2×2 inventory grid and a right-clickable 3×3 crafting

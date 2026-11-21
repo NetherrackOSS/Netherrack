@@ -5,6 +5,7 @@ import com.netherrack.api.event.player.PlayerCommandEvent;
 import com.netherrack.api.event.player.PlayerLoginEvent;
 import com.netherrack.server.Netherrack;
 import com.netherrack.server.block.Block;
+import com.netherrack.server.block.BlockEntities;
 import com.netherrack.server.command.AvailableCommands;
 import com.netherrack.server.command.PlayerCommandSender;
 import com.netherrack.server.crafting.Recipes;
@@ -66,6 +67,7 @@ import org.cloudburstmc.protocol.bedrock.packet.AvailableEntityIdentifiersPacket
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacketHandler;
 import org.cloudburstmc.protocol.bedrock.packet.BiomeDefinitionListPacket;
+import org.cloudburstmc.protocol.bedrock.packet.BlockPickRequestPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ChunkRadiusUpdatedPacket;
 import org.cloudburstmc.protocol.bedrock.packet.CommandRequestPacket;
 
@@ -969,6 +971,46 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         if (player != null && packet.getAction() == PlayerActionType.DIMENSION_CHANGE_REQUEST_OR_CREATIVE_DESTROY_BLOCK) {
             blockInteraction.creativeBreak(player, packet.getBlockPosition());
         }
+        return PacketSignal.HANDLED;
+    }
+
+    /**
+     * A middle-click on a block. The client asks for the item rather than taking one itself:
+     * survival players must already have it, while creative players are given one. The picked
+     * item keeps the clicked block's state, and the client is told both the new inventory and
+     * the slot it should select.
+     */
+    @Override
+    public PacketSignal handle(BlockPickRequestPacket packet) {
+        if (!spawned || player == null || player.isDead() || player.isSpectator()) {
+            return PacketSignal.HANDLED;
+        }
+        Vector3i position = packet.getBlockPosition();
+        if (position == null || !blockInteraction.canReach(player, position)) {
+            return PacketSignal.HANDLED;
+        }
+        Block block = world.getBlock(position.getX(), position.getY(), position.getZ());
+        if (block == null) {
+            return PacketSignal.HANDLED;
+        }
+        ItemData picked = VanillaData.get().pickedItem(block);
+        if (picked.isNull()) {
+            return PacketSignal.HANDLED; // blocks with no item, such as bedrock or water
+        }
+        picked = BlockEntities.dropFor(picked, world.getBlockEntity(position));
+
+        PlayerInventory.PickResult result = player.getInventory()
+                .pick(picked, player.isCreative(), player.getSelectedSlot());
+        if (!result.changed()) {
+            return PacketSignal.HANDLED;
+        }
+        player.setSelectedSlot(result.slot());
+        sendInventory();
+        PlayerHotbarPacket hotbar = new PlayerHotbarPacket();
+        hotbar.setContainerId(ContainerId.INVENTORY);
+        hotbar.setSelectedHotbarSlot(result.slot());
+        hotbar.setSelectHotbarSlot(true);
+        session.sendPacket(hotbar);
         return PacketSignal.HANDLED;
     }
 

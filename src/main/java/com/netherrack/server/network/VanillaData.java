@@ -225,6 +225,20 @@ public final class VanillaData {
         return item(block.getIdentifier(), count);
     }
 
+    /**
+     * The item a player gets by middle-clicking a block. Where the item places blocks, its block
+     * definition is the clicked state rather than the item's default, so variants like stairs
+     * keep the facing they were picked from. Air if the block has no item, as with bedrock or
+     * water.
+     */
+    public ItemData pickedItem(Block block) {
+        ItemData item = item(itemPlacing(block.getIdentifier()), 1);
+        if (item.isNull() || !placedBlockByItem.containsKey(item.getDefinition().getRuntimeId())) {
+            return item;
+        }
+        return item.toBuilder().blockDefinition(HashedBlockDefinitions.of(block.getBlockStateHash())).build();
+    }
+
     /** The most of an item one stack holds: 64 for most, 16 or 1 for some. */
     public int maxStackSize(ItemData item) {
         return maxStackByItem.getOrDefault(item.getDefinition().getRuntimeId(), 64);

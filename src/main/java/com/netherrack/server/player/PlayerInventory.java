@@ -88,6 +88,10 @@ public class PlayerInventory {
     private record Recent(int requestId, List<Change> changes) {
     }
 
+    /** The hotbar slot chosen for a picked item, and whether the inventory or slot changed. */
+    public record PickResult(int slot, boolean changed) {
+    }
+
     /** Why a request was refused. Only logged - the client just undoes the request. */
     private static class Refused extends Exception {
         Refused(String reason) {
@@ -267,6 +271,70 @@ public class PlayerInventory {
             }
         }
         return left;
+    }
+
+    /**
+     * Selects an item for the player the way vanilla selects one picked from the world: a stack
+     * already in the hotbar wins, one in the main inventory is swapped or moved into an empty
+     * hotbar slot, and creative players are given one when they haven't got it. The caller owns
+     * the player's selected slot and sends the changes to the client; this only changes stacks.
+     */
+    public synchronized PickResult pick(ItemData item, boolean creative, int selectedSlot) {
+        if (item == null || item.isNull() || selectedSlot < 0 || selectedSlot >= HOTBAR_SIZE) {
+            return new PickResult(selectedSlot, false);
+        }
+
+        int found = -1;
+        for (int slot = 0; slot < SIZE; slot++) {
+            if (!main[slot].isNull() && sameKind(main[slot], item)) {
+                if (slot < HOTBAR_SIZE) {
+                    return new PickResult(slot, slot != selectedSlot);
+                }
+                found = slot;
+                break;
+            }
+        }
+
+        // An empty hotbar slot is the cleanest place for a stack from deeper in the inventory,
+        // or for a fresh creative item - nothing held has to be moved out of the way.
+        for (int slot = 0; slot < HOTBAR_SIZE; slot++) {
+            if (!main[slot].isNull()) {
+                continue;
+            }
+            if (found >= 0) {
+                main[slot] = main[found];
+                main[found] = ItemData.AIR;
+                return new PickResult(slot, true);
+            }
+            if (creative) {
+                main[slot] = withCount(item, item.getCount(), nextNetId++);
+                return new PickResult(slot, true);
+            }
+        }
+
+        if (found >= 0) {
+            // No empty hotbar slot: exchange the matching stack with whatever is held.
+            ItemData held = main[selectedSlot];
+            main[selectedSlot] = main[found];
+            main[found] = held;
+            return new PickResult(selectedSlot, true);
+        }
+        if (creative) {
+            // Creative picks replace the held item; put what was held back into the main
+            // inventory when there's room, so filling the hotbar doesn't silently lose it.
+            ItemData held = main[selectedSlot];
+            main[selectedSlot] = withCount(item, item.getCount(), nextNetId++);
+            if (!held.isNull()) {
+                for (int slot = HOTBAR_SIZE; slot < SIZE; slot++) {
+                    if (main[slot].isNull()) {
+                        main[slot] = held;
+                        break;
+                    }
+                }
+            }
+            return new PickResult(selectedSlot, true);
+        }
+        return new PickResult(selectedSlot, false);
     }
 
     /**
@@ -936,10 +1004,19 @@ public class PlayerInventory {
 
     /** Whether two stacks are the same item and could join up. */
     private static boolean sameItem(ItemData a, ItemData b) {
-        return a.getDefinition().getRuntimeId() == b.getDefinition().getRuntimeId()
+        return sameKind(a, b) && blockId(a) == blockId(b);
+    }
+
+    /**
+     * Whether two stacks are the same kind of item, ignoring the block state a picked item
+     * carries: middle-clicking stairs facing another way should still select the stairs already
+     * in the hotbar.
+     */
+    private static boolean sameKind(ItemData a, ItemData b) {
+        return a.getDefinition() != null && b.getDefinition() != null
+                && a.getDefinition().getRuntimeId() == b.getDefinition().getRuntimeId()
                 && a.getDamage() == b.getDamage()
-                && Objects.equals(a.getTag(), b.getTag())
-                && blockId(a) == blockId(b);
+                && Objects.equals(a.getTag(), b.getTag());
     }
 
     private static int maxStack(ItemData item) {

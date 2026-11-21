@@ -60,6 +60,10 @@
   It welcomes players on join, answers `!hello` in chat with a private, configurable greeting, and
   uses `/where` to show location, game mode and the block underfoot; `/where up` and `/where copy`
   demonstrate teleporting and writing a block snapshot back to the world.
+- **Pick block:** middle-clicking a block now selects its item. The server finds a matching stack
+  in the hotbar or main inventory, gives creative players one when needed, keeps the clicked
+  block's state and simple block-entity data such as bed colors, and tells the client which slot
+  to select.
 - **API regression checks:** the separate `NetherrackAPI` repository has plain-Java checks for
   lifecycle, config, event ordering, cancellation, failure isolation, unregister-on-disable,
   commands, permissions, locations, game modes and block state properties.

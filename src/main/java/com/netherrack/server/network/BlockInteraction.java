@@ -600,6 +600,11 @@ public class BlockInteraction {
         return player.getPosition().distanceSquared(center(position)) <= MAX_REACH * MAX_REACH;
     }
 
+    /** Whether a player is close enough to a block to act on it, including middle-click picking. */
+    public boolean canReach(Player player, Vector3i position) {
+        return inWorld(position) && withinReach(player, position);
+    }
+
     /** Whether a player overlaps the part of a block's space a box takes up. */
     private static boolean insidePlayer(Player player, Vector3i block, BlockShapes.Box box) {
         Vector3f feet = player.getFeetPosition();
