@@ -35,9 +35,10 @@ src/main/java/com/netherrack/api/
              EventExecutor, HandlerList, EventException, EventManager,
              RegisteredHandler
   event/player/  PlayerEvent, PlayerLoginEvent, PlayerJoinEvent, PlayerQuitEvent,
-                 PlayerChatEvent, PlayerCommandEvent
+                 PlayerChatEvent, PlayerCommandEvent, PlayerFormRespondedEvent
   event/server/  ServerEvent, ServerStartEvent, ServerStopEvent
   event/block/   BlockEvent, BlockPlaceEvent, BlockBreakEvent
+  form/      Form, SimpleForm, SimpleFormResponse
   entity/    Player, GameMode
   world/     World, BlockSnapshot, BlockPosition, Location
   scheduler/ Scheduler, TaskHandler
@@ -188,6 +189,17 @@ return quickly; a plugin scheduler for slower work comes in Phase 3.
   Phase 3a scheduler to move slower work onto the tick thread; don't hold a live server object in a
   plugin. Avoid designing the entire game in the API before there are plugins using it.
 
+## Phase 3c — form UI (implemented)
+
+- `Form` owns its JSON and response handling, so only the server's plugin layer needs to know about
+  `ModalFormRequestPacket` and `ModalFormResponsePacket`. `SimpleForm` follows Nukkit's simple-form
+  layout: a title, message text and buttons whose click response is the button's index.
+- `Player.showForm(Form)` sends the form and returns its id, or `-1` if that player already has one
+  open. Ids come from a server-wide counter. Responses are matched by id and stale answers are
+  ignored; cancel reasons and the literal `"null"` both run the form's close callback.
+- `PlayerFormRespondedEvent` carries the raw answer for listeners that want to observe every form,
+  while `onSubmit`/`onClose` are the direct callbacks for the plugin that opened the form.
+
 ## Phase 5 — polish
 
 Dependency-driven load order fully working, optional `/plugman`-style enable/disable/reload if
@@ -211,11 +223,13 @@ page linked from the README.
 - API repo: plain-Java checks (no new test dependency) for `plugin.yml` parsing, handler
   ordering by priority and across base classes, cancellation with `ignoreCancelled`, handler
   failure isolation, unregister-on-disable, command declarations, permission attachments and
-  the tri-state permission model, locations, game modes and block state properties. These checks
-  are passing for Phases 1-3b.
-- This repo: extend `tests/run.sh` with a smoke test that loads a stub plugin jar and asserts
-  the order `onLoad → onEnable → (events fire) → onDisable`, plus a cancelled event not reaching
-  the server action.
+  the tri-state permission model, locations, game modes, block state properties and form
+  JSON/callbacks. These checks are passing for Phases 1-3b and the form API.
+- This repo: `tests/run-form.sh` checks the adapter's form ids, request JSON, one-open-form rule,
+  stale response rejection, submit/close callbacks and disconnect cleanup. Later, extend a general
+  `tests/run.sh` with a smoke test that loads a stub plugin jar and asserts the order
+  `onLoad → onEnable → (events fire) → onDisable`, plus a cancelled event not reaching the server
+  action.
 - Verify a real server start with one example plugin before calling any phase done.
 
 ## Decisions

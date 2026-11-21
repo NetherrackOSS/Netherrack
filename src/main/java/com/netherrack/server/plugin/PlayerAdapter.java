@@ -4,6 +4,7 @@ import com.netherrack.api.Server;
 import com.netherrack.api.command.CommandSender;
 import com.netherrack.api.entity.GameMode;
 import com.netherrack.api.entity.Player;
+import com.netherrack.api.form.Form;
 import com.netherrack.api.permission.PermissionAttachment;
 import com.netherrack.api.permission.PermissionState;
 import com.netherrack.api.plugin.Plugin;
@@ -12,8 +13,11 @@ import com.netherrack.api.world.World;
 import com.netherrack.server.network.SessionDisconnect;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.protocol.bedrock.data.GameType;
+import org.cloudburstmc.protocol.bedrock.packet.ModalFormRequestPacket;
 import org.cloudburstmc.protocol.bedrock.packet.TextPacket;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -29,6 +33,10 @@ final class PlayerAdapter implements Player, CommandSender {
     private final com.netherrack.server.player.Player player;
     private final ServerAdapter apiServer;
     private final PermissionSubject permissions;
+    // Forms are opened and answered on the player's network thread. Keeping the open one here
+    // means Nukkit-style form callbacks can live on the form itself without leaking protocol types.
+    private final Map<Integer, Form> openForms = new HashMap<>();
+    private boolean formOpen;
 
     PlayerAdapter(com.netherrack.server.player.Player player, ServerAdapter apiServer) {
         this.player = player;
@@ -97,6 +105,41 @@ final class PlayerAdapter implements Player, CommandSender {
         text.setMessage(message);
         text.setNeedsTranslation(false);
         player.getSession().sendPacket(text);
+    }
+
+    @Override
+    public int showForm(Form form) {
+        Objects.requireNonNull(form, "form");
+        // The client itself only renders one modal form at a time. Refusing the second request
+        // keeps our id-to-form state from getting out of step with what the player can answer.
+        if (formOpen || !openForms.isEmpty()) {
+            return -1;
+        }
+        int formId = apiServer.nextFormId();
+        ModalFormRequestPacket request = new ModalFormRequestPacket();
+        request.setFormId(formId);
+        request.setFormData(form.toJson());
+        openForms.put(formId, form);
+        formOpen = true;
+        player.getSession().sendPacket(request);
+        return formId;
+    }
+
+    /** Answers the one open form, returning it so EventBridge can announce the response. */
+    Form completeForm(int formId, String data, boolean closed) {
+        Form form = openForms.remove(formId);
+        if (form == null) {
+            return null;
+        }
+        formOpen = false;
+        form.handleResponse(this, data, closed);
+        return form;
+    }
+
+    /** Drops form state without running callbacks, for a player who has disconnected. */
+    void discardForm() {
+        openForms.clear();
+        formOpen = false;
     }
 
     @Override

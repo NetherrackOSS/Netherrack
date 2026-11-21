@@ -3,6 +3,7 @@ package com.netherrack.example.hello;
 import com.netherrack.api.command.Command;
 import com.netherrack.api.command.CommandSender;
 import com.netherrack.api.entity.Player;
+import com.netherrack.api.form.SimpleForm;
 import com.netherrack.api.permission.Permission;
 import com.netherrack.api.permission.PermissionDefault;
 import com.netherrack.api.plugin.PluginBase;
@@ -49,6 +50,9 @@ public final class HelloPlugin extends PluginBase {
         if (command.getName().equals("where")) {
             return where(sender, args);
         }
+        if (command.getName().equals("testform")) {
+            return testForm(sender);
+        }
         String target = args.length == 0 ? sender.getName() : String.join(" ", args);
         sender.sendMessage(greeting() + " " + target);
         return true;
@@ -78,6 +82,24 @@ public final class HelloPlugin extends PluginBase {
         sender.sendMessage("Position: " + location + "; game mode: "
                 + player.getGameMode().name().toLowerCase(Locale.ROOT));
         sender.sendMessage("Standing on: " + (below == null ? "air" : below));
+        return true;
+    }
+
+    /** /testform opens the smallest possible Bedrock form: one title, one message, one button. */
+    private boolean testForm(CommandSender sender) {
+        Player player = sender.getPlayer();
+        if (player == null) {
+            sender.sendMessage("Only players can use /testform.");
+            return true;
+        }
+        SimpleForm form = new SimpleForm("Test", "Test")
+                .addButton("Test")
+                .onSubmit((submitter, response) -> submitter.sendMessage(
+                        "You clicked " + response.getButtonText() + "."))
+                .onClose(submitter -> submitter.sendMessage("You closed the test form."));
+        if (player.showForm(form) == -1) {
+            sender.sendMessage("You already have a form open.");
+        }
         return true;
     }
 

@@ -83,6 +83,7 @@ import org.cloudburstmc.protocol.bedrock.packet.ItemStackRequestPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ItemStackResponsePacket;
 import org.cloudburstmc.protocol.bedrock.packet.JigsawStructureDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.MobEquipmentPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ModalFormResponsePacket;
 import org.cloudburstmc.protocol.bedrock.packet.MovePlayerPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LevelSoundEventPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LoginPacket;
@@ -644,6 +645,23 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
     }
 
     /**
+     * The client's answer to a form. A cancel reason or the literal "null" means it was closed;
+     * both are treated the same as Nukkit does so the form's close callback still runs. Unknown
+     * ids are ignored by EventBridge, which keeps late answers from triggering another form.
+     */
+    @Override
+    public PacketSignal handle(ModalFormResponsePacket packet) {
+        if (player == null) {
+            return PacketSignal.HANDLED;
+        }
+        String data = packet.getFormData();
+        boolean closed = packet.getCancelReason().isPresent()
+                || data == null || data.isBlank() || data.trim().equals("null");
+        EventBridge.formResponse(netherrack, player, packet.getFormId(), data, closed);
+        return PacketSignal.HANDLED;
+    }
+
+    /**
      * A command typed in chat. Vanilla clients send these as their own packet rather than
      * as a chat message starting with "/".
      */
@@ -1134,6 +1152,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         chunkViews.remove(chunkView);
         if (player != null) {
             blockInteraction.stopBreaking();
+            EventBridge.closeForm(netherrack, player);
             // Saved before they leave the player list: stopping the server saves everyone
             // still on it, so whoever is leaving at that moment is saved one way or the other.
             world.savePlayer(player.getUuid(), PlayerData.save(player));

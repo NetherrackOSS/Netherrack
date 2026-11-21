@@ -297,8 +297,9 @@ Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Over
   and `onDisable()` callbacks. Plugins can register listeners with priorities and cancellation for
   server, player and block events, declare commands in `plugin.yml`, schedule delayed and repeating
   tick tasks, and register permission nodes with wildcard matching and per-player attachments. They
-  can also read player locations and game modes, teleport players, and read or replace blocks as
-  immutable snapshots. `examples/hello-plugin/` is a minimal Maven plugin showing all of them.
+  can also read player locations and game modes, teleport players, open simple Bedrock forms, and
+  read or replace blocks as immutable snapshots. `examples/hello-plugin/` is a minimal Maven plugin
+  showing all of them, including a `/testform` command.
 
 # 🚧 Current status
 

@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Presents the running server to plugins through the API's small Server interface.
@@ -33,6 +34,7 @@ public final class ServerAdapter implements Server {
     private final PluginScheduler pluginScheduler;
     private final ConsoleSenderAdapter consoleSender;
     private final Map<UUID, PlayerAdapter> players = new ConcurrentHashMap<>();
+    private final AtomicInteger nextFormId = new AtomicInteger();
     private PluginManagerImpl pluginManager;
 
     public ServerAdapter(Netherrack server) {
@@ -121,6 +123,11 @@ public final class ServerAdapter implements Server {
             players.put(player.getUuid(), adapter);
         }
         return adapter;
+    }
+
+    /** Ids are server-wide so a late response for an old adapter cannot hit a new form. */
+    int nextFormId() {
+        return nextFormId.incrementAndGet();
     }
 
     WorldAdapter worldAdapter() {

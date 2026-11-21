@@ -1,6 +1,11 @@
 # v0.4.0-beta (unreleased)
 
 ### Added
+- **Custom form UI API:** plugins can open a Bedrock `SimpleForm` with a title, message and buttons
+  through `Player.showForm(Form)`. The server sends the form JSON, matches responses by id, runs
+  submit or close callbacks, rejects a second form while one is open, and fires
+  `PlayerFormRespondedEvent` for observers. `examples/hello-plugin/` now has `/testform`, which
+  opens a form titled `Test` with the message `Test` and one button also labeled `Test`.
 - **Shift-click crafting:** shift-clicking a recipe in the 2×2 or 3×3 crafting book now asks
   the server for a whole batch instead of one result. The server checks the requested number
   of crafts, verifies that the inventory consumes cover its own copy of the recipe (including
@@ -78,7 +83,9 @@
   to select.
 - **API regression checks:** the separate `NetherrackAPI` repository has plain-Java checks for
   lifecycle, config, event ordering, cancellation, failure isolation, unregister-on-disable,
-  commands, permissions, locations, game modes and block state properties.
+  commands, permissions, locations, game modes, block state properties and form JSON/callbacks.
+  The server also has `tests/run-form.sh` for form ids, packet JSON, stale responses, close
+  callbacks and disconnect cleanup.
 
 ### Changed
 - Startup logs the running Netherrack version, git commit and GPL notice once NetherNet signaling

@@ -5,11 +5,13 @@ import com.netherrack.api.event.block.BlockBreakEvent;
 import com.netherrack.api.event.block.BlockPlaceEvent;
 import com.netherrack.api.event.player.PlayerChatEvent;
 import com.netherrack.api.event.player.PlayerCommandEvent;
+import com.netherrack.api.event.player.PlayerFormRespondedEvent;
 import com.netherrack.api.event.player.PlayerJoinEvent;
 import com.netherrack.api.event.player.PlayerLoginEvent;
 import com.netherrack.api.event.player.PlayerQuitEvent;
 import com.netherrack.api.event.server.ServerStartEvent;
 import com.netherrack.api.event.server.ServerStopEvent;
+import com.netherrack.api.form.Form;
 import com.netherrack.api.world.BlockPosition;
 import com.netherrack.server.Netherrack;
 import com.netherrack.server.block.Block;
@@ -66,6 +68,22 @@ public final class EventBridge {
         return event;
     }
 
+    /** Completes the matching form, then lets other plugins observe the raw response. */
+    public static void formResponse(Netherrack server,
+                                    com.netherrack.server.player.Player player,
+                                    int formId, String data, boolean closed) {
+        PlayerAdapter adapter = apiPlayer(server, player);
+        Form form = adapter.completeForm(formId, data, closed);
+        if (form != null) {
+            call(server, new PlayerFormRespondedEvent(adapter, form, formId, data, closed));
+        }
+    }
+
+    /** Clears a disconnected player's open form without calling its callbacks. */
+    public static void closeForm(Netherrack server, com.netherrack.server.player.Player player) {
+        apiPlayer(server, player).discardForm();
+    }
+
     public static BlockPlaceEvent blockPlace(Netherrack server,
                                              com.netherrack.server.player.Player player,
                                              Vector3i position, Block block) {
@@ -84,8 +102,8 @@ public final class EventBridge {
         return event;
     }
 
-    private static com.netherrack.api.entity.Player apiPlayer(Netherrack server,
-                                                             com.netherrack.server.player.Player player) {
+    private static PlayerAdapter apiPlayer(Netherrack server,
+                                           com.netherrack.server.player.Player player) {
         return server.getPluginManager().adapter().player(player);
     }
 
