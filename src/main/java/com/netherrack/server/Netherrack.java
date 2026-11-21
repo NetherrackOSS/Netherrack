@@ -2,6 +2,7 @@ package com.netherrack.server;
 
 import com.netherrack.api.plugin.PluginLoadOrder;
 import com.netherrack.server.command.AvailableCommands;
+import com.netherrack.server.command.ClearCommand;
 import com.netherrack.server.command.CommandManager;
 import com.netherrack.server.command.ConsoleCommandSender;
 import com.netherrack.server.command.DeopCommand;
@@ -96,6 +97,7 @@ public class Netherrack {
         commandManager.register(new KickCommand());
         commandManager.register(new TpCommand());
         commandManager.register(new GiveCommand());
+        commandManager.register(new ClearCommand());
         commandManager.register(new ReloadCommand());
         commandManager.register(new PluginsCommand());
 

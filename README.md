@@ -214,6 +214,7 @@ Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Over
   | `version` | `ver` | 0 | Show server version and system information |
   | `gamemode` | — | 2 | Change a player's game mode |
   | `give` | — | 2 | Give a player an item |
+  | `clear` | — | 2 | Empty a player's inventory |
   | `kill` | — | 2 | Kill a player |
   | `kick` | — | 2 | Disconnect a player, optionally with a reason |
   | `tp` | — | 2 | Teleport a player (players or coordinates, with `~` relative support) |

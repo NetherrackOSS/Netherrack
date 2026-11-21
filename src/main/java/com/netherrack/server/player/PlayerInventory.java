@@ -535,6 +535,40 @@ public class PlayerInventory {
         }
     }
 
+    /**
+     * Empties everything the player carries, including their armor, offhand and whatever is on
+     * the cursor or in a crafting grid. Old stack ids are forgotten too: a request the client had
+     * already sent can't use one to bring a cleared stack back. The caller sends the whole
+     * inventory afresh. Returns how many individual items were removed.
+     */
+    public synchronized int clear() {
+        int removed = count(main) + count(armor) + count(crafting) + count(table)
+                + count(offhand) + count(cursor);
+        Arrays.fill(main, ItemData.AIR);
+        Arrays.fill(armor, ItemData.AIR);
+        Arrays.fill(crafting, ItemData.AIR);
+        Arrays.fill(table, ItemData.AIR);
+        offhand = ItemData.AIR;
+        cursor = ItemData.AIR;
+        created = ItemData.AIR;
+        recent.clear();
+        return removed;
+    }
+
+    /** How many items are in these slots, counting a stack by its size. */
+    private static int count(ItemData[] slots) {
+        int total = 0;
+        for (ItemData item : slots) {
+            total += count(item);
+        }
+        return total;
+    }
+
+    /** How many items a slot holds. */
+    private static int count(ItemData item) {
+        return item.isNull() ? 0 : item.getCount();
+    }
+
     /** A saved item with a network id of its own, as every stack in the inventory has. */
     private ItemData restored(ItemData item) {
         return item.isNull() ? ItemData.AIR : withCount(item, item.getCount(), nextNetId++);

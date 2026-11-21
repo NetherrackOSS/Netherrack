@@ -28,6 +28,9 @@
   each name in lime green for players and in ANSI lime green on a color-capable console.
 - **`/kick` command:** operators with command level 2 or higher can disconnect an online player,
   with an optional reason shown on their disconnect screen and in the console's logout line.
+- **`/clear` command:** operators with command level 2 or higher can empty a target player's
+  inventory, including armor, offhand and anything on the cursor or in a crafting grid. Players
+  can clear their own inventory with `/clear` or `/clear @s`.
 - **Plugin events:** plugins can register `Listener` classes with `@EventHandler`, choose from six
   priorities, cancel cancellable events, and let base-class listeners receive subclasses. Handler
   errors are logged without stopping later handlers, and every handler is unregistered when its
