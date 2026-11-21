@@ -72,6 +72,10 @@
   commands, permissions, locations, game modes and block state properties.
 
 ### Changed
+- Startup logs the running Netherrack version, git commit and GPL notice once NetherNet signaling
+  is listening, so the console shows which build accepted connections.
+- `/version` now includes the plugin API version below the operating system line. The value comes
+  from the same Maven tag used to build the server's API dependency.
 - Console logout lines now read `SchleroMC logged out due to: Disconnected`. The reason is the
   player's kick message when the server ended the session, or a plain translation of the transport
   reason when the client left; in-game leave messages are unchanged.

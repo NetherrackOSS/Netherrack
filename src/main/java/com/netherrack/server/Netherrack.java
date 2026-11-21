@@ -250,6 +250,11 @@ public class Netherrack {
         tripwires = new TripwireSensor(world, playerManager);
         startTicking();
         netherNetServer.start(world, playerManager, this);
+        // Signaling is bound now, so report the build from here on - the same details /version
+        // gives, followed by the license the server is distributed under.
+        Logger.info("This server is running Netherrack v" + VERSION + " (git commit: "
+                + VersionInfo.GIT_COMMIT + ")");
+        Logger.info("Netherrack is distributed under the GPL License");
 
         sleep(150);
         Logger.info(lang.get("server.early_build"));

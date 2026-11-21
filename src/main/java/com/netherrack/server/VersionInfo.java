@@ -6,13 +6,13 @@ import java.util.Properties;
 
 /**
  * What the server is and what it's running on: its name and version, the git commit it was
- * built from, and the Java and operating system it's running under. This is the one place
- * those are kept, so the startup log and /version can't disagree.
+ * built from, the plugin API it builds against, and the Java and operating system it's running
+ * under. This is the one place those are kept, so the startup log and /version can't disagree.
  * <p>
- * The version comes from pom.xml (copied into version.properties when building), and the
- * commit from git.properties, which the build writes when it's run inside a git checkout.
- * A build without them - from a downloaded source archive, or run from an IDE - still works:
- * what's missing shows as "unknown".
+ * The versions come from pom.xml (copied into properties files when building), and the commit
+ * from git.properties, which the build writes when it's run inside a git checkout. A build
+ * without them - from a downloaded source archive, or run from an IDE - still works: what's
+ * missing shows as "unknown".
  */
 public final class VersionInfo {
 
@@ -26,6 +26,13 @@ public final class VersionInfo {
     /** The short id of the git commit this was built from. */
     public static final String GIT_COMMIT = load("/git.properties").getProperty("git.commit.id.abbrev", UNKNOWN);
 
+    /**
+     * The plugin API this server builds against, as plugins see it: "0.4.0-SNAPSHOT" rather
+     * than the "v0.4.0-SNAPSHOT" git tag used by Maven and JitPack.
+     */
+    public static final String PLUGIN_API_VERSION = stripTagPrefix(
+            load("/plugin-api-version.properties").getProperty("version", "v" + UNKNOWN));
+
     /** The Java it's running on, e.g. "17.0.9 (Eclipse Adoptium)". */
     public static final String JAVA_VERSION = property("java.version") + " (" + property("java.vendor") + ")";
 
@@ -34,6 +41,11 @@ public final class VersionInfo {
             property("os.name") + " " + property("os.version") + " (" + property("os.arch") + ")";
 
     private VersionInfo() {
+    }
+
+    /** Git tags name a version with a leading "v"; /version shows the version itself. */
+    private static String stripTagPrefix(String version) {
+        return version.startsWith("v") ? version.substring(1) : version;
     }
 
     private static String property(String name) {
