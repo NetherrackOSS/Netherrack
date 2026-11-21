@@ -9,6 +9,7 @@ import org.cloudburstmc.protocol.bedrock.data.inventory.FullContainerName;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequest;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequestSlotData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.AutoCraftRecipeAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.ConsumeAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.CraftCreativeAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.CraftRecipeAction;
@@ -29,7 +30,9 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -427,8 +430,13 @@ public class PlayerInventory {
         List<ItemStackRequestSlotData> touched = new ArrayList<>();
         List<ItemData> consumedNow = new ArrayList<>();
         try {
+            boolean autoCraft = false;
             for (ItemStackRequestAction action : request.getActions()) {
-                apply(action, request.getActions(), requestId, creative, changes, touched, consumedNow);            }
+                autoCraft |= action instanceof AutoCraftRecipeAction;
+            }
+            for (ItemStackRequestAction action : request.getActions()) {
+                apply(action, request.getActions(), requestId, creative, autoCraft, changes, touched, consumedNow);
+            }
             checkArmor();
         } catch (Refused refused) {
             before.restore();
@@ -681,8 +689,8 @@ public class PlayerInventory {
     }
 
     private void apply(ItemStackRequestAction action, ItemStackRequestAction[] allActions, int requestId,
-                       boolean creative, List<Change> changes, List<ItemStackRequestSlotData> touched,
-                       List<ItemData> consumedNow) throws Refused {
+                       boolean creative, boolean autoCraft, List<Change> changes,
+                       List<ItemStackRequestSlotData> touched, List<ItemData> consumedNow) throws Refused {
         if (action instanceof TransferItemStackRequestAction transfer) {
             // Take and Place: moving some or all of a stack, onto nothing or onto the same item.
             transfer(transfer.getCount(), transfer.getSource(), transfer.getDestination(), requestId, changes);
@@ -724,6 +732,40 @@ public class PlayerInventory {
             }
             // Until it lands in a real slot, the client names this stack by the request's id.
             created = withCount(recipe.result(), recipe.result().getCount(), requestId);
+        } else if (action instanceof AutoCraftRecipeAction auto) {
+            for (ItemStackRequestAction candidate : allActions) {
+                if (candidate != action && candidate instanceof AutoCraftRecipeAction) {
+                    throw new Refused("more than one auto-craft in a single request");
+                }
+            }
+            Recipes.Recipe recipe = Recipes.get().byNetId(auto.getRecipeNetworkId());
+            if (recipe == null) {
+                throw new Refused("no recipe with network id " + auto.getRecipeNetworkId());
+            }
+            int crafts = autoCraftCount(auto);
+            if (crafts < 1) {
+                throw new Refused("an auto-craft must make at least one thing");
+            }
+            // The recipe book empties the grid before shift-clicking: its ingredients come
+            // straight from the inventory, so anything already laid out would be a different craft.
+            ItemData[] grid = tableOpen ? table : crafting;
+            for (ItemData item : grid) {
+                if (!item.isNull()) {
+                    throw new Refused("clear the crafting grid before auto-crafting");
+                }
+            }
+            List<ItemData> ingredients = autoCraftIngredients(allActions);
+            if (!recipe.matches(ingredients, crafts)) {
+                throw new Refused("the consumed items don't cover " + crafts + " of " + recipe.id());
+            }
+            int resultCount = recipe.result().getCount();
+            long output = (long) resultCount * crafts;
+            if (resultCount < 1 || output > maxStack(recipe.result())) {
+                throw new Refused("an auto-craft can't make " + output + " of " + recipe.id() + " at once");
+            }
+            // As with a manual craft, the whole batch waits in the virtual output for the
+            // request's Take actions to distribute it into real slots.
+            created = withCount(recipe.result(), (int) output, requestId);
         } else if (action instanceof DestroyAction destroy) {
             if (!creative) {
                 throw new Refused("only creative players can destroy items");
@@ -749,7 +791,9 @@ public class PlayerInventory {
         } else if (action instanceof ConsumeAction consume) {
             Place from = resolve(consume.getSource());
             ItemData item = get(from);
-            if (from.kind() != Kind.CRAFTING && from.kind() != Kind.TABLE
+            // A shift-click's consumes come from the inventory even when the ingredient is
+            // food, so they must not fall through to the eating path.
+            if (!autoCraft && from.kind() != Kind.CRAFTING && from.kind() != Kind.TABLE
                     && (item.isNull() || Foods.of(item) != null)) {
                 // Eating food: the client's consume request and the server's tick race to
                 // finish the meal, and only one of them may take the item out. The client's
@@ -815,6 +859,47 @@ public class PlayerInventory {
             throw new Refused("nothing in the grid to craft from");
         }
         return grid;
+    }
+
+    /** The craft count on a shift-click request; current clients duplicate it in both fields. */
+    private static int autoCraftCount(AutoCraftRecipeAction auto) {
+        int crafts = auto.getTimesCrafted();
+        return crafts > 0 ? crafts : auto.getNumberOfRequestedCrafts();
+    }
+
+    /**
+     * The stacks a shift-click says it's using up. The consumes themselves are applied in
+     * order later, but the recipe has to be checked while the ingredients are still in their
+     * slots. Counts are capped by what each slot really holds, so one stack can feed several
+     * consume actions.
+     */
+    private List<ItemData> autoCraftIngredients(ItemStackRequestAction[] actions) throws Refused {
+        Map<Place, ItemData> sources = new HashMap<>();
+        Map<Place, Integer> remaining = new HashMap<>();
+        List<ItemData> ingredients = new ArrayList<>();
+        for (ItemStackRequestAction action : actions) {
+            if (!(action instanceof ConsumeAction consume)) {
+                continue;
+            }
+            Place place = resolve(consume.getSource());
+            if (place.kind() != Kind.MAIN) {
+                throw new Refused("auto-craft ingredients must come from the inventory");
+            }
+            if (consume.getCount() < 1) {
+                throw new Refused("an auto-craft can't consume nothing");
+            }
+            ItemData item = sources.computeIfAbsent(place, ignored -> get(place));
+            int available = remaining.getOrDefault(place, item.isNull() ? 0 : item.getCount());
+            if (item.isNull() || consume.getCount() > available) {
+                throw new Refused("can't consume " + consume.getCount() + " from a stack of " + available);
+            }
+            remaining.put(place, available - consume.getCount());
+            ingredients.add(item.toBuilder().count(consume.getCount()).build());
+        }
+        if (ingredients.isEmpty()) {
+            throw new Refused("an auto-craft has no ingredients");
+        }
+        return ingredients;
     }
 
     private void transfer(int count, ItemStackRequestSlotData source, ItemStackRequestSlotData destination,

@@ -271,7 +271,8 @@ Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Over
 - **Inventory and crafting** — the 2×2 inventory grid and a right-clickable 3×3 crafting
   table. All 4,770 recipes for this protocol version are sent to the client; the server
   validates grid shapes, consumes ingredients, and hands out results. Ingredient tags and
-  data-carrying outputs such as banners and firework rockets work.
+  data-carrying outputs such as banners and firework rockets work. Shift-clicking a recipe
+  crafts as many stacks as the available ingredients and inventory space allow.
 - **Commands** — built-in console and chat commands with permission levels:
 
   | Command | Alias | Min. level | Description |
@@ -310,8 +311,7 @@ include:
   plains.
 - Runtime plugin enable, disable and reload are still to come; restarting is needed after adding,
   removing or updating a plugin jar.
-- Furnace, stonecutter, and smithing screens and their interactions are not implemented;
-  shift-click crafting of a stack is not supported.
+- Furnace, stonecutter, and smithing screens and their interactions are not implemented.
 - Items dropped into lava or fire are not destroyed, and death drops in unloaded chunks or
   the void are untested.
 - Client movement is not validated server-side, so positions are currently accepted as reported.

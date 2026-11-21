@@ -1,6 +1,10 @@
 # v0.4.0-beta (unreleased)
 
 ### Added
+- **Shift-click crafting:** shift-clicking a recipe in the 2×2 or 3×3 crafting book now asks
+  the server for a whole batch instead of one result. The server checks the requested number
+  of crafts, verifies that the inventory consumes cover its own copy of the recipe (including
+  item tags), rejects batches that would overflow a stack, and leaves the crafting grid clear.
 - **Expanded setup wizard:** after the language and license screens, a first run can now skip
   the remaining questions or set the server MOTD, port, default gamemode and maximum player
   count before a final summary shows the local and externally detected addresses. The public
