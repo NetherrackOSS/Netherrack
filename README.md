@@ -265,7 +265,7 @@ Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Over
   and the server autosaves every 30 seconds.
 - **Players and gameplay** — login, movement, chat, join/leave messages, four game modes,
   health and hunger, eating, block breaking and placement, middle-click pick block, drops, and
-  item entities that can be picked up and despawn over time.
+  item entities that can be picked up, burn in lava or fire, and despawn over time.
 - **Combat** — player-versus-player hits with vanilla-like reach, weapon damage and knockback,
   invulnerability ticks, creative/spectator protections, and dropped inventories on death.
 - **Inventory and crafting** — the 2×2 inventory grid and a right-clickable 3×3 crafting
@@ -313,8 +313,7 @@ include:
 - Runtime plugin enable, disable and reload are still to come; restarting is needed after adding,
   removing or updating a plugin jar.
 - Furnace, stonecutter, and smithing screens and their interactions are not implemented.
-- Items dropped into lava or fire are not destroyed, and death drops in unloaded chunks or
-  the void are untested.
+- Death drops landing in unloaded chunks or the void are untested.
 - Client movement is not validated server-side, so positions are currently accepted as reported.
 - Some bundled vanilla data is from versions just before 1.26.60; a few newer blocks or
   entities may be missing or appear as the unknown-block texture.

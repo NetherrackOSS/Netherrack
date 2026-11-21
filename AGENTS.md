@@ -6,6 +6,8 @@ Guidance for AI coding agents working in this repository.
 
 Netherrack is an experimental vibe coded Minecraft: Bedrock Edition server software project
 focused on learning, experimentation, and building a server implementation from the ground up.
+It is deliberately Nukkit-like in gameplay and console feel: PocketMine/PNX-style logs and
+Cloudburst Nukkit's behavior are often the closest reference when a mechanic needs a model.
 
 - Language: Java 17
 - Build: Maven (shaded fat JAR, `finalName` = `netherrack`)
@@ -27,8 +29,10 @@ bash mvnw clean compile
 ```
 
 - Use `bash mvnw ...` — the wrapper script is not executable on Linux.
-- There is currently no automated test suite in the repo. Verify changes by starting the
-  server and connecting with a Bedrock Edition client (default port `19132`).
+- There is no Maven test suite in the repo, but `tests/` has plain-Java regression harnesses:
+  `tests/run-form.sh` for the plugin form API and `tests/run-item-hazard.sh` for dropped items in
+  lava and fire. Verify larger changes by starting the server and connecting with a Bedrock
+  Edition client (default port `19132`).
 - Run the server with the JVM flags `start.sh` uses: java may need
   `--sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED` for the
   NetherNet native transport.

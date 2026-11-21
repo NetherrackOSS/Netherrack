@@ -14,6 +14,7 @@ import org.cloudburstmc.protocol.bedrock.packet.AddItemEntityPacket;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
 import org.cloudburstmc.protocol.bedrock.packet.MoveEntityAbsolutePacket;
 import org.cloudburstmc.protocol.bedrock.packet.RemoveEntityPacket;
+import org.cloudburstmc.protocol.bedrock.packet.SetEntityDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.SetEntityMotionPacket;
 import org.cloudburstmc.protocol.bedrock.packet.TakeItemEntityPacket;
 
@@ -123,9 +124,19 @@ public class ItemEntities {
                 hideFromEveryone(item);
                 continue;
             }
-            if (item.step(world)) {
+            boolean moved = item.step(world);
+            boolean wasBurning = item.isBurning();
+            if (item.applyHazards(world)) {
+                iterator.remove();
+                hideFromEveryone(item);
+                continue;
+            }
+            if (moved) {
                 sendToShowing(item, movePacket(item));
                 sendToShowing(item, motionPacket(item));
+            }
+            if (item.isBurning() != wasBurning) {
+                sendToShowing(item, firePacket(item));
             }
         }
 
@@ -256,6 +267,9 @@ public class ItemEntities {
     private static AddItemEntityPacket addPacket(ItemEntity item) {
         EntityDataMap metadata = new EntityDataMap();
         metadata.setFlag(EntityFlag.HAS_GRAVITY, true);
+        if (item.isBurning()) {
+            metadata.setFlag(EntityFlag.ON_FIRE, true);
+        }
         metadata.put(EntityDataTypes.WIDTH, (float) ItemEntity.SIZE);
         metadata.put(EntityDataTypes.HEIGHT, (float) ItemEntity.SIZE);
 
@@ -283,6 +297,17 @@ public class ItemEntities {
         SetEntityMotionPacket packet = new SetEntityMotionPacket();
         packet.setRuntimeEntityId(item.getEntityId());
         packet.setMotion(item.getVelocity());
+        packet.setTick(tick);
+        return packet;
+    }
+
+    /** Tells clients whether an item's flames have just appeared or gone out. */
+    private SetEntityDataPacket firePacket(ItemEntity item) {
+        EntityDataMap metadata = new EntityDataMap();
+        metadata.setFlag(EntityFlag.ON_FIRE, item.isBurning());
+        SetEntityDataPacket packet = new SetEntityDataPacket();
+        packet.setRuntimeEntityId(item.getEntityId());
+        packet.setMetadata(metadata);
         packet.setTick(tick);
         return packet;
     }

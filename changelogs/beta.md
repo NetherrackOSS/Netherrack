@@ -6,6 +6,11 @@
   submit or close callbacks, rejects a second form while one is open, and fires
   `PlayerFormRespondedEvent` for observers. `examples/hello-plugin/` now has `/testform`, which
   opens a form titled `Test` with the message `Test` and one button also labeled `Test`.
+- **Burning dropped items:** item entities now take Cloudburst Nukkit-style damage from lava and
+  fire, show the `ON_FIRE` flag while alight, and keep taking afterburn damage for up to eight
+  seconds after leaving the hazard. Netherite items are fireproof and burn off faster.
+  `tests/run-item-hazard.sh` checks the damage numbers, flowing lava and soul fire, afterburn,
+  and the netherite exception.
 - **Shift-click crafting:** shift-clicking a recipe in the 2×2 or 3×3 crafting book now asks
   the server for a whole batch instead of one result. The server checks the requested number
   of crafts, verifies that the inventory consumes cover its own copy of the recipe (including
