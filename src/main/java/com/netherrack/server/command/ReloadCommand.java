@@ -11,10 +11,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Re-reads netherrack.yml's logging sections while the server is running, so a format or color
- * tweak doesn't need a restart. The file is read quietly first: {@link Logger} applies the new
- * settings before it prints the reply, so even that reply uses them. Network debug output is
- * picked up too, since it lives in the same file beside the logging settings.
+ * Re-reads netherrack.yml's logging sections and hot-reloads plugins while the server is
+ * running. Config is read quietly first: {@link Logger} applies the new logging settings before
+ * it prints the reply, so even that reply uses them. Plugin reload follows the same rough shape
+ * as Cloudburst Nukkit's reload: loaded plugins are disabled, their listeners/commands/tasks are
+ * cleared, and jars in plugins/ are discovered and loaded again.
  */
 public class ReloadCommand implements Command {
 
@@ -47,5 +48,7 @@ public class ReloadCommand implements Command {
             NettyLogBridge.setDebug(Boolean.parseBoolean(debug));
         }
         sender.sendText(Lang.current.get("command.reload.logging"));
+        server.getPluginManager().reload();
+        sender.sendSuccess("command.reload.plugins");
     }
 }

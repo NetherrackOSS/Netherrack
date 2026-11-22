@@ -154,14 +154,46 @@ public final class PluginManagerImpl implements PluginManager {
         List<PluginContainer> reverse = new ArrayList<>(plugins);
         Collections.reverse(reverse);
         for (PluginContainer container : reverse) {
-            if (!container.loaded || container.closed) {
-                continue;
-            }
+            unload(container);
+        }
+    }
+
+    /**
+     * Hot-reloads plugins from the plugins directory, Nukkit-style: disable loaded plugins, clear
+     * plugin commands/listeners/scheduler tasks/permissions, then discover and load them again.
+     * Built-in server commands and configuration stay as they are; use /reload on its own for the
+     * logging/config part this command already handled.
+     */
+    public synchronized void reload() {
+        Logger.info("Reloading plugins...");
+        List<PluginContainer> reverse = new ArrayList<>(plugins);
+        Collections.reverse(reverse);
+        for (PluginContainer container : reverse) {
+            unload(container);
+        }
+        plugins.clear();
+        pluginCommands.clear();
+        discovered = false;
+
+        discover();
+        callOnLoad(PluginLoadOrder.STARTUP);
+        callOnLoad(PluginLoadOrder.POSTWORLD);
+        enableAll();
+        Logger.info("Plugin reload complete. Loaded " + plugins.size() + " plugin(s).");
+    }
+
+    private void unload(PluginContainer container) {
+        if (container.closed) {
+            return;
+        }
+        if (container.enabled) {
             setEnabled(container, false);
             lifecycle(container, "onDisable", Plugin::onDisable);
-            cleanup(container);
-            close(container);
         }
+        if (container.loaded) {
+            cleanup(container);
+        }
+        close(container);
     }
 
     @Override

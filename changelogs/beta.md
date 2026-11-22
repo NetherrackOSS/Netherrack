@@ -33,8 +33,10 @@
   `labels.bracket-color` colors the brackets around placeholders without coloring the brackets
   in a player's message. Malformed settings and unknown placeholders are warned about and fall
   back safely.
-- **`/reload` command:** reapplies `netherrack.yml` logging settings without restarting, including
-  the console DEBUG switch and per-level enable flags.
+- **`/reload` command:** reapplies `netherrack.yml` logging settings and hot-reloads plugins
+  without restarting. Logging reload includes the console DEBUG switch and per-level enable flags;
+  plugin reload disables loaded plugins, clears their listeners/commands/tasks/permissions, and
+  discovers jars in `plugins/` again.
 - **Separate plugin API artifact:** the lifecycle contracts live in `NetherrackAPI`, built by
   JitPack from `v0.4.0-SNAPSHOT` and consumed with `provided` scope by plugins. The server declares
   the same artifact and shades it into `netherrack.jar`.
@@ -129,9 +131,12 @@
   commands.
 - A design document at `PLUGIN_API_PLAN.md` records the plugin API boundaries, event plan,
   implementation phases and the threading rule for each event.
+- `/reload` now also hot-reloads plugins after reapplying logging settings, so a replaced jar in
+  `plugins/` can be picked up without a full restart.
 
 ### Known limitations
-- Runtime plugin enable, disable and reload are still planned; a plugin jar change needs a restart.
+- Plugin hot-reload is best-effort and follows Nukkit's broad reload shape; for classloader or
+  state-heavy plugins, a full server restart is still the safest recovery path.
 - API permission changes are checked at command execution, but a player's already-sent client
   command suggestions are not refreshed until the server sends them again (for example on a change
   of vanilla command level).

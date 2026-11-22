@@ -294,7 +294,7 @@ Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Over
   | `tp` | — | 2 | Teleport a player (players or coordinates, with `~` relative support) |
   | `op` / `deop` | — | 3 | Grant or remove operator status |
   | `whitelist` | `wl` | 3 | Turn the whitelist on/off, list entries, or add/remove players |
-  | `reload` | `rl` | 4 | Reload logging settings from `netherrack.yml` |
+  | `reload` | `rl` | 4 | Reload logging settings and plugins |
   | `plugins` | `pl` | 0 | List installed plugins |
   | `stop` | — | 4 | Stop the server gracefully |
 
@@ -307,7 +307,7 @@ Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Over
   and `/ban`, `/pardon` (`/unban`) and `/banlist` manage them for operators. IP bans aren't kept.
 - **Localization and logging** — English (US) and Brazilian Portuguese console messages,
   customizable per-level console formats and colors, plain log files, and optional verbose
-  debug logging that can be reloaded at runtime.
+  debug logging and plugins that can be reloaded at runtime.
 - **Plugin API** — jars in `plugins/` are read in dependency order and get `onLoad()`, `onEnable()`
   and `onDisable()` callbacks. Plugins can register listeners with priorities and cancellation for
   server, player and block events, declare commands in `plugin.yml`, schedule delayed and repeating
@@ -325,8 +325,8 @@ include:
 - Compatibility with Bedrock client versions other than 1.26.60.
 - Terrain variety: no caves, ores, flowers, or multiple biomes yet — every generated chunk is
   plains.
-- Runtime plugin enable, disable and reload are still to come; restarting is needed after adding,
-  removing or updating a plugin jar.
+- Plugin hot-reload exists through `/reload`, but it is best-effort; a full restart is still the
+  safest option after complex plugin changes.
 - Furnace, stonecutter, and smithing screens and their interactions are not implemented.
 - Death drops landing in unloaded chunks or the void are untested.
 - Client movement is not validated server-side, so positions are currently accepted as reported.
