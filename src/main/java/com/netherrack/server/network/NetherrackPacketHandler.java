@@ -337,6 +337,13 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         Permission permission = netherrack.getPermissions().of(xuid);
         player.setPermission(permission, netherrack.commandLevelFor(permission));
 
+        // Turn non-whitelisted players away before LOGIN_SUCCESS, with the configured reason.
+        // PlayerLoginEvent is deliberately not fired: this is a server rule, not a plugin veto.
+        if (!netherrack.isWhitelisted(username, xuid, uuid)) {
+            SessionDisconnect.disconnect(session, netherrack.getWhitelistMessage());
+            return;
+        }
+
         // Plugins get the last word before the client is told it can play. A cancelled login is
         // disconnected here; the player object still exists so onDisconnect() can save it once.
         PlayerLoginEvent login = EventBridge.playerLogin(netherrack, player);

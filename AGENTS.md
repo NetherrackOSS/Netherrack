@@ -30,9 +30,10 @@ bash mvnw clean compile
 
 - Use `bash mvnw ...` — the wrapper script is not executable on Linux.
 - There is no Maven test suite in the repo, but `tests/` has plain-Java regression harnesses:
-  `tests/run-form.sh` for the plugin form API and `tests/run-item-hazard.sh` for dropped items in
-  lava and fire. Verify larger changes by starting the server and connecting with a Bedrock
-  Edition client (default port `19132`).
+  `tests/run-form.sh` for the plugin form API, `tests/run-item-hazard.sh` for dropped items in
+  lava and fire, and `tests/run-whitelist.sh` for whitelist entries and the toggle. Verify larger
+  changes by starting the server and connecting with a Bedrock Edition client (default port
+  `19132`).
 - Run the server with the JVM flags `start.sh` uses: java may need
   `--sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED` for the
   NetherNet native transport.
@@ -44,7 +45,7 @@ bash mvnw clean compile
   when piping commands to the console.
 - `server.properties` keys include: `server-port`, `server-ip`, `level-name`, `level-type`
   (`default` = generated terrain, the default; `flat` = flat presets, which must keep working),
-  `gamemode`, `difficulty`, `max-players`, `view-distance`.
+  `gamemode`, `difficulty`, `max-players`, `view-distance`, `white-list`.
 - `netherrack.yml` holds Netherrack's own settings, including `level.preset-type` (which flat
   preset new flat levels use) and `messages.*`.
 - Worlds live in `worlds/<level-name>/`: `level.dat` (see `LevelDat`), `levelname.txt`, `db/`.

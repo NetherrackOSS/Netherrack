@@ -179,6 +179,7 @@ The first run creates:
 | `server.properties` | Server and world settings |
 | `netherrack.yml` | Netherrack-specific settings (logs, messages, flat preset) |
 | `permissions.json` | Operator/permission data |
+| `whitelist.json` | Players allowed in when `white-list` is enabled |
 | `nethernet-identity.pem` | Persistent NetherNet server identity (EC key pair) |
 | `logs/latest.log` | Console copy plus optional debug detail |
 | `worlds/Bedrock level/` | The default world (`level.dat`, `levelname.txt`, `db/`) |
@@ -200,6 +201,7 @@ Open Bedrock Edition on the same machine (or network) and connect to the server 
 | `difficulty` | `normal` | `peaceful`, `easy`, `normal`, or `hard` (not enforced yet; gameplay currently runs on easy) |
 | `max-players` | `20` | Maximum concurrent players |
 | `online-mode` | `true` | Generated but currently ignored — NetherNet always requires Xbox authentication |
+| `white-list` | `false` | Only allow players in `whitelist.json`, plus operators, when enabled |
 | `server-port` | `19132` | Listening port |
 | `server-ip` | `0.0.0.0` | Bind address; `0.0.0.0` listens on all interfaces |
 | `view-distance` | `32` | View distance in chunks (5 or more) |
@@ -228,7 +230,7 @@ Open Bedrock Edition on the same machine (or network) and connect to the server 
 | `labels` | `timestamp-color`, `thread-color`, `info-color`, `warn-color`, `error-color`, `debug-color` | `cyan`, `yellow`, `blue`, `red`, `bright-red`, `null`, `null` | Named color for each label; `null` leaves it plain |
 | `labels` | `bracket-color` | `null` | Named color for brackets around placeholders; `null` leaves them plain |
 | `messages` | `server-shutdown` | `Server closed` | Message shown to players when the server closes |
-| `messages` | `server-whitelist` | `You are not whitelisted on this server!` | Configured message for turned-away players; whitelist enforcement is not implemented yet |
+| `messages` | `server-whitelist` | `You are not whitelisted on this server!` | Disconnect reason shown to players turned away by the whitelist |
 | `level` | `preset-type` | `Classic Flat` | Flat preset used for new `flat` worlds |
 
 The `logging` and `labels` sections are read before the server prints its first line, so the
@@ -286,10 +288,15 @@ Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Over
   | `kick` | — | 2 | Disconnect a player, optionally with a reason |
   | `tp` | — | 2 | Teleport a player (players or coordinates, with `~` relative support) |
   | `op` / `deop` | — | 3 | Grant or remove operator status |
+  | `whitelist` | `wl` | 3 | Turn the whitelist on/off, list entries, or add/remove players |
   | `reload` | `rl` | 4 | Reload logging settings from `netherrack.yml` |
   | `plugins` | `pl` | 0 | List installed plugins |
   | `stop` | — | 4 | Stop the server gracefully |
 
+- **Whitelist** — an optional player allowlist in `whitelist.json`. Entries can use a gamertag,
+  XUID or UUID, so offline players can be added by name and online players keep working after a
+  gamertag change. Operators bypass it, and `/whitelist on|off|list|add|remove|reload` manages it
+  without a restart.
 - **Localization and logging** — English (US) and Brazilian Portuguese console messages,
   customizable per-level console formats and colors, plain log files, and optional verbose
   debug logging that can be reloaded at runtime.

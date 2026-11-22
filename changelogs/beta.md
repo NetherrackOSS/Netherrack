@@ -10,7 +10,7 @@
   fire, show the `ON_FIRE` flag while alight, and keep taking afterburn damage for up to eight
   seconds after leaving the hazard. Netherite items are fireproof and burn off faster.
   `tests/run-item-hazard.sh` checks the damage numbers, flowing lava and soul fire, afterburn,
-  and the netherite exception.
+  the netherite exception, and cleanup of items left in unloaded chunks.
 - **Shift-click crafting:** shift-clicking a recipe in the 2×2 or 3×3 crafting book now asks
   the server for a whole batch instead of one result. The server checks the requested number
   of crafts, verifies that the inventory consumes cover its own copy of the recipe (including
@@ -47,6 +47,12 @@
   each name in lime green for players and in ANSI lime green on a color-capable console.
 - **`/kick` command:** operators with command level 2 or higher can disconnect an online player,
   with an optional reason shown on their disconnect screen and in the console's logout line.
+- **Whitelist:** `white-list` in `server.properties` now restricts joining to the players in
+  `whitelist.json`, with operators always allowed. Entries can store a gamertag, XUID, UUID or any
+  combination, so offline names and renamed accounts keep working. `/whitelist on|off|list|reload`
+  and `/whitelist add|remove <player>` manage it at command level 3; the disconnect reason comes
+  from `messages.server-whitelist` in `netherrack.yml`. `tests/run-whitelist.sh` checks the JSON
+  store, identifier matching, hand edits and the saved toggle.
 - **`/clear` command:** operators with command level 2 or higher can empty a target player's
   inventory, including armor, offhand and anything on the cursor or in a crafting grid. Players
   can clear their own inventory with `/clear` or `/clear @s`.

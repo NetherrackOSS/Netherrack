@@ -18,6 +18,7 @@ import com.netherrack.server.command.StopCommand;
 import com.netherrack.server.crafting.Recipes;
 import com.netherrack.server.command.TpCommand;
 import com.netherrack.server.command.VersionCommand;
+import com.netherrack.server.command.WhitelistCommand;
 import com.netherrack.server.entity.ItemEntities;
 import com.netherrack.server.network.ChunkViews;
 import com.netherrack.server.network.NetherNetServer;
@@ -29,6 +30,7 @@ import com.netherrack.server.player.Player;
 import com.netherrack.server.player.PlayerData;
 import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.player.PlayerSurvival;
+import com.netherrack.server.player.Whitelist;
 import com.netherrack.server.network.SessionDisconnect;
 import com.netherrack.server.plugin.EventBridge;
 import com.netherrack.server.plugin.PluginManagerImpl;
@@ -76,6 +78,7 @@ public class Netherrack {
     private final Scheduler scheduler = new Scheduler();
     private Map<String, String> wizardSettings = Map.of();
     private Permissions permissions;
+    private Whitelist whitelist;
     private ScheduledExecutorService ticker;
     private ScheduledExecutorService autosave;
     private boolean worldClosed;
@@ -102,6 +105,7 @@ public class Netherrack {
         commandManager.register(new ClearCommand());
         commandManager.register(new ReloadCommand());
         commandManager.register(new PluginsCommand());
+        commandManager.register(new WhitelistCommand());
 
         this.pluginManager = new PluginManagerImpl(this, Path.of("plugins"));
     }
@@ -116,6 +120,44 @@ public class Netherrack {
 
     public Permissions getPermissions() {
         return permissions;
+    }
+
+    public Whitelist getWhitelist() {
+        return whitelist;
+    }
+
+    /** Whether only whitelisted players and operators may join right now. */
+    public boolean isWhitelistEnabled() {
+        return config.getBoolean("white-list", false);
+    }
+
+    public void setWhitelistEnabled(boolean enabled) {
+        config.setBoolean("white-list", enabled);
+    }
+
+    /** Re-reads whitelist.json, so hand-edited entries take effect with /whitelist reload. */
+    public void reloadWhitelist() {
+        whitelist.reload();
+    }
+
+    /**
+     * Operators always pass, and an empty XUID is fine for offline accounts: the whitelist entry
+     * may be by gamertag or UUID instead.
+     */
+    public boolean isWhitelisted(String name, String xuid, String uuid) {
+        if (!isWhitelistEnabled()) {
+            return true;
+        }
+        if (permissions != null && permissions.of(xuid) == Permission.OPERATOR) {
+            return true;
+        }
+        return whitelist != null && whitelist.contains(name, xuid, uuid);
+    }
+
+    /** The disconnect reason from netherrack.yml, with a safe fallback for older configs. */
+    public String getWhitelistMessage() {
+        String message = settings.getString("messages.server-whitelist");
+        return message == null || message.isBlank() ? "You are not whitelisted on this server!" : message;
     }
 
     /**
@@ -212,6 +254,7 @@ public class Netherrack {
         settings.load(config);
 
         permissions = Permissions.load(Permissions.FILE, defaultPermission());
+        whitelist = Whitelist.load(Whitelist.FILE);
 
         NettyLogBridge.setDebug(settings.getBoolean("logs.debug"));
         if (NettyLogBridge.isDebug()) {

@@ -28,6 +28,8 @@ public final class ItemHazardTest {
         netheriteWithstandsLavaBriefly();
         airLeavesItemsAlone();
         managerRemovesBurningItems();
+        unloadedItemsStillExpire();
+        unloadedVoidItemsDisappear();
 
         System.out.println(failures == 0
                 ? "All item hazard checks passed."
@@ -115,29 +117,63 @@ public final class ItemHazardTest {
     private static void managerRemovesBurningItems() {
         FakeWorld lava = new FakeWorld(BlockID.LAVA);
         ItemEntities entities = new ItemEntities(lava, new PlayerManager());
+        Map<Long, ItemEntity> items = addItem(entities, item("minecraft:stick"));
+
+        entities.tick();
+        check("manager removes burning item", items.isEmpty(), true);
+    }
+
+    private static void unloadedItemsStillExpire() {
+        FakeWorld air = new FakeWorld("minecraft:air");
+        air.setLoaded(false);
+        ItemEntities entities = new ItemEntities(air, new PlayerManager());
         ItemEntity item = item("minecraft:stick");
+        for (int i = 0; i < 5999; i++) {
+            item.age();
+        }
+        Map<Long, ItemEntity> items = addItem(entities, item);
+
+        entities.tick();
+        check("unloaded item still expires", items.isEmpty(), true);
+    }
+
+    private static void unloadedVoidItemsDisappear() {
+        FakeWorld air = new FakeWorld("minecraft:air");
+        air.setLoaded(false);
+        ItemEntities entities = new ItemEntities(air, new PlayerManager());
+        Map<Long, ItemEntity> items = addItem(entities, item("minecraft:stick", -200));
+
+        entities.tick();
+        check("unloaded void item is removed", items.isEmpty(), true);
+    }
+
+    private static Map<Long, ItemEntity> addItem(ItemEntities entities, ItemEntity item) {
         try {
             Field field = ItemEntities.class.getDeclaredField("items");
             field.setAccessible(true);
             @SuppressWarnings("unchecked")
             Map<Long, ItemEntity> items = (Map<Long, ItemEntity>) field.get(entities);
             items.put(item.getEntityId(), item);
-            entities.tick();
-            check("manager removes burning item", items.isEmpty(), true);
+            return items;
         } catch (ReflectiveOperationException e) {
             throw new AssertionError(e);
         }
     }
 
     private static ItemEntity item(String id) {
+        return item(id, 4);
+    }
+
+    private static ItemEntity item(String id, double y) {
         return new ItemEntity(1, ItemData.builder()
                 .definition(new SimpleItemDefinition(id, 1, false))
                 .count(1)
-                .build(), Vector3f.from(0.5, 4, 0.5), Vector3f.ZERO, 0);
+                .build(), Vector3f.from(0.5, y, 0.5), Vector3f.ZERO, 0);
     }
 
     private static final class FakeWorld extends World {
         private Block block;
+        private boolean loaded = true;
 
         FakeWorld(String identifier) {
             super("test", null, null, NbtMap.builder().build());
@@ -148,6 +184,10 @@ public final class ItemHazardTest {
             this.block = new Block(identifier);
         }
 
+        void setLoaded(boolean loaded) {
+            this.loaded = loaded;
+        }
+
         @Override
         public Block getBlock(int x, int y, int z) {
             return block;
@@ -155,7 +195,7 @@ public final class ItemHazardTest {
 
         @Override
         public boolean isChunkLoaded(int chunkX, int chunkZ) {
-            return true;
+            return loaded;
         }
     }
 

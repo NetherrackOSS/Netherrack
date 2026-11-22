@@ -35,6 +35,10 @@ public class ServerConfig {
                 new Setting("max-players", "20",
                         "The maximum number of players that can play on the server",
                         "Allowed values: Any positive integer"),
+                new Setting("white-list", "false",
+                        "If true, only players listed in whitelist.json (and operators) may join.",
+                        "The whitelist command changes this while the server is running.",
+                        "Allowed values: \"true\" or \"false\""),
                 new Setting("online-mode", "true",
                         "If true then all connected players must be authenticated to Xbox Live.",
                         "Clients connecting to remote (non-LAN) servers will always require Xbox Live authentication"
@@ -194,5 +198,39 @@ public class ServerConfig {
 
     public boolean getBoolean(String key, boolean defaultValue) {
         return Boolean.parseBoolean(properties.getProperty(key, String.valueOf(defaultValue)));
+    }
+
+    /**
+     * Changes a setting in memory and writes it back to the file. The file is edited line by
+     * line instead of being regenerated so the comments and hand-written settings around it
+     * survive; a setting missing from an older file is appended.
+     */
+    public synchronized void set(String key, String value) {
+        properties.setProperty(key, value);
+        try {
+            List<String> lines = Files.readAllLines(path, StandardCharsets.ISO_8859_1);
+            String assignment = key + "=" + value;
+            boolean found = false;
+            for (int i = 0; i < lines.size(); i++) {
+                if (lines.get(i).trim().startsWith(key + "=")) {
+                    lines.set(i, assignment);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                if (!lines.isEmpty() && !lines.get(lines.size() - 1).isBlank()) {
+                    lines.add("");
+                }
+                lines.add(assignment);
+            }
+            Files.write(path, lines, StandardCharsets.ISO_8859_1);
+        } catch (IOException e) {
+            Logger.error("Failed to save " + path + ": " + e.getMessage());
+        }
+    }
+
+    public void setBoolean(String key, boolean value) {
+        set(key, String.valueOf(value));
     }
 }

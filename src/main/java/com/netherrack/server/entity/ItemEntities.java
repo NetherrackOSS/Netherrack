@@ -113,15 +113,17 @@ public class ItemEntities {
         Iterator<ItemEntity> iterator = items.values().iterator();
         while (iterator.hasNext()) {
             ItemEntity item = iterator.next();
-            // Items where no player is near wait, as vanilla's do, rather than loading their chunk back.
-            Vector3f position = item.getPosition();
-            if (!world.isChunkLoaded(position.getFloorX() >> 4, position.getFloorZ() >> 4)) {
-                continue;
-            }
             item.age();
             if (item.getAge() >= LIFETIME || item.getPosition().getY() < VOID_Y) {
                 iterator.remove();
                 hideFromEveryone(item);
+                continue;
+            }
+            // Items where no player is near wait, as vanilla's do, rather than loading their
+            // chunk back. They still age and clean themselves up above, so a dropped item
+            // left in an unloaded chunk can't survive forever.
+            Vector3f position = item.getPosition();
+            if (!world.isChunkLoaded(position.getFloorX() >> 4, position.getFloorZ() >> 4)) {
                 continue;
             }
             boolean moved = item.step(world);
