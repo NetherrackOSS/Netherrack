@@ -31,9 +31,9 @@ bash mvnw clean compile
 - Use `bash mvnw ...` — the wrapper script is not executable on Linux.
 - There is no Maven test suite in the repo, but `tests/` has plain-Java regression harnesses:
   `tests/run-form.sh` for the plugin form API, `tests/run-item-hazard.sh` for dropped items in
-  lava and fire, and `tests/run-whitelist.sh` for whitelist entries and the toggle. Verify larger
-  changes by starting the server and connecting with a Bedrock Edition client (default port
-  `19132`).
+  lava and fire, `tests/run-whitelist.sh` for whitelist entries and the toggle, and
+  `tests/run-ban.sh` for banned-players.json and expiry. Verify larger changes by starting the
+  server and connecting with a Bedrock Edition client (default port `19132`).
 - Run the server with the JVM flags `start.sh` uses: java may need
   `--sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED` for the
   NetherNet native transport.

@@ -103,6 +103,7 @@ After the wizard finishes, the server generates:
 | `netherrack.yml` | Netherrack-specific settings |
 | `permissions.json` | Operator/permission data |
 | `whitelist.json` | Players allowed in when `white-list` is enabled |
+| `banned-players.json` | Banned players, reasons and who banned them |
 | `nethernet-identity.pem` | Persistent NetherNet server identity |
 | `logs/latest.log` | Server log |
 | `worlds/Bedrock level/` | The default world |

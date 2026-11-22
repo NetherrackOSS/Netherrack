@@ -180,6 +180,7 @@ The first run creates:
 | `netherrack.yml` | Netherrack-specific settings (logs, messages, flat preset) |
 | `permissions.json` | Operator/permission data |
 | `whitelist.json` | Players allowed in when `white-list` is enabled |
+| `banned-players.json` | Banned players, their reasons and who banned them |
 | `nethernet-identity.pem` | Persistent NetherNet server identity (EC key pair) |
 | `logs/latest.log` | Console copy plus optional debug detail |
 | `worlds/Bedrock level/` | The default world (`level.dat`, `levelname.txt`, `db/`) |
@@ -231,6 +232,7 @@ Open Bedrock Edition on the same machine (or network) and connect to the server 
 | `labels` | `bracket-color` | `null` | Named color for brackets around placeholders; `null` leaves them plain |
 | `messages` | `server-shutdown` | `Server closed` | Message shown to players when the server closes |
 | `messages` | `server-whitelist` | `You are not whitelisted on this server!` | Disconnect reason shown to players turned away by the whitelist |
+| `messages` | `server-ban` | `You are banned!` | Disconnect reason shown to banned players; the stored reason is appended |
 | `level` | `preset-type` | `Classic Flat` | Flat preset used for new `flat` worlds |
 
 The `logging` and `labels` sections are read before the server prints its first line, so the
@@ -286,6 +288,9 @@ Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Over
   | `clear` | — | 2 | Empty a player's inventory |
   | `kill` | — | 2 | Kill a player |
   | `kick` | — | 2 | Disconnect a player, optionally with a reason |
+  | `ban` | — | 2 | Ban a player, optionally with a reason |
+  | `pardon` | `unban` | 2 | Remove a player ban |
+  | `banlist` | — | 2 | List bans or reload `banned-players.json` |
   | `tp` | — | 2 | Teleport a player (players or coordinates, with `~` relative support) |
   | `op` / `deop` | — | 3 | Grant or remove operator status |
   | `whitelist` | `wl` | 3 | Turn the whitelist on/off, list entries, or add/remove players |
@@ -297,6 +302,9 @@ Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Over
   XUID or UUID, so offline players can be added by name and online players keep working after a
   gamertag change. Operators bypass it, and `/whitelist on|off|list|add|remove|reload` manages it
   without a restart.
+- **Bans** — a Cloudburst Nukkit-style `banned-players.json` keeps each ban's name, reason, source,
+  creation date and expiry. XUID and UUID are saved when known so bans survive gamertag changes,
+  and `/ban`, `/pardon` (`/unban`) and `/banlist` manage them for operators. IP bans aren't kept.
 - **Localization and logging** — English (US) and Brazilian Portuguese console messages,
   customizable per-level console formats and colors, plain log files, and optional verbose
   debug logging that can be reloaded at runtime.

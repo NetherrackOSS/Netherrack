@@ -136,7 +136,10 @@ public class NetherrackConfig {
                         new Setting("server-shutdown", "Server closed", true,
                                 "What the players still on the server are shown when it closes."),
                         new Setting("server-whitelist", "You are not whitelisted on this server!", true,
-                                "What a player who isn't on the whitelist is shown as they're turned away."))),
+                                "What a player who isn't on the whitelist is shown as they're turned away."),
+                        new Setting("server-ban", "You are banned!", true,
+                                "What a banned player is shown as they're turned away. The stored reason, if"
+                                        + " any, is appended after \"Reason:\"."))),
                 new Section("level", List.of(
                         new Setting("preset-type", preset, true,
                                 "Which of the game's flat world presets a new flat level is made from, which sets"

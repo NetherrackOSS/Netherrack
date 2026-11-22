@@ -13,16 +13,21 @@ import com.netherrack.server.command.KickCommand;
 import com.netherrack.server.command.KillCommand;
 import com.netherrack.server.command.OpCommand;
 import com.netherrack.server.command.PluginsCommand;
+import com.netherrack.server.command.BanCommand;
+import com.netherrack.server.command.BanListCommand;
+import com.netherrack.server.command.PardonCommand;
 import com.netherrack.server.command.ReloadCommand;
 import com.netherrack.server.command.StopCommand;
-import com.netherrack.server.crafting.Recipes;
 import com.netherrack.server.command.TpCommand;
 import com.netherrack.server.command.VersionCommand;
 import com.netherrack.server.command.WhitelistCommand;
+import com.netherrack.server.crafting.Recipes;
 import com.netherrack.server.entity.ItemEntities;
 import com.netherrack.server.network.ChunkViews;
 import com.netherrack.server.network.NetherNetServer;
 import com.netherrack.server.network.TripwireSensor;
+import com.netherrack.server.player.BanEntry;
+import com.netherrack.server.player.BanList;
 import com.netherrack.server.player.GameModes;
 import com.netherrack.server.player.Permission;
 import com.netherrack.server.player.Permissions;
@@ -79,6 +84,7 @@ public class Netherrack {
     private Map<String, String> wizardSettings = Map.of();
     private Permissions permissions;
     private Whitelist whitelist;
+    private BanList bans;
     private ScheduledExecutorService ticker;
     private ScheduledExecutorService autosave;
     private boolean worldClosed;
@@ -106,6 +112,9 @@ public class Netherrack {
         commandManager.register(new ReloadCommand());
         commandManager.register(new PluginsCommand());
         commandManager.register(new WhitelistCommand());
+        commandManager.register(new BanCommand());
+        commandManager.register(new PardonCommand());
+        commandManager.register(new BanListCommand());
 
         this.pluginManager = new PluginManagerImpl(this, Path.of("plugins"));
     }
@@ -124,6 +133,24 @@ public class Netherrack {
 
     public Whitelist getWhitelist() {
         return whitelist;
+    }
+
+    public BanList getBans() {
+        return bans;
+    }
+
+    /** The matching ban, if this player is banned. Expired entries are discarded as they're read. */
+    public BanEntry banFor(String name, String xuid, String uuid) {
+        return bans == null ? null : bans.matching(name, xuid, uuid);
+    }
+
+    /** Nukkit's ban wording, with the stored reason appended when there is one. */
+    public String getBanMessage(String reason) {
+        String message = settings.getString("messages.server-ban");
+        if (message == null || message.isBlank()) {
+            message = "You are banned!";
+        }
+        return reason == null || reason.isBlank() ? message : message + " Reason: " + reason;
     }
 
     /** Whether only whitelisted players and operators may join right now. */
@@ -255,6 +282,7 @@ public class Netherrack {
 
         permissions = Permissions.load(Permissions.FILE, defaultPermission());
         whitelist = Whitelist.load(Whitelist.FILE);
+        bans = BanList.load(BanList.FILE);
 
         NettyLogBridge.setDebug(settings.getBoolean("logs.debug"));
         if (NettyLogBridge.isDebug()) {

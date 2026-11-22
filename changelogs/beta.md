@@ -53,6 +53,14 @@
   and `/whitelist add|remove <player>` manage it at command level 3; the disconnect reason comes
   from `messages.server-whitelist` in `netherrack.yml`. `tests/run-whitelist.sh` checks the JSON
   store, identifier matching, hand edits and the saved toggle.
+- **Bans:** a Cloudburst Nukkit-style `banned-players.json` now stores each ban's lowercase name,
+  creation date, source, expiry and reason, with XUID and UUID saved too when the player is
+  online so a gamertag change doesn't lift the ban. Banned players are turned away at login with
+  the reason from `messages.server-ban` in `netherrack.yml`. `/ban <player> [reason...]` kicks an
+  online target as well; `/pardon <player>` (alias `/unban`) removes bans and `/banlist` lists them
+  or reloads the file. All three are level 2, like Nukkit's operator-only ban commands; Nukkit's
+  `/banlist ips` is accepted but Netherrack doesn't keep IP bans. `tests/run-ban.sh` checks the
+  saved fields, identifier matching, expiry and hand edits.
 - **`/clear` command:** operators with command level 2 or higher can empty a target player's
   inventory, including armor, offhand and anything on the cursor or in a crafting grid. Players
   can clear their own inventory with `/clear` or `/clear @s`.

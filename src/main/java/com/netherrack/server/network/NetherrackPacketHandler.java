@@ -11,6 +11,7 @@ import com.netherrack.server.command.PlayerCommandSender;
 import com.netherrack.server.crafting.Recipes;
 import com.netherrack.server.entity.EntityIds;
 import com.netherrack.server.entity.ItemEntities;
+import com.netherrack.server.player.BanEntry;
 import com.netherrack.server.player.Foods;
 import com.netherrack.server.player.Permission;
 import com.netherrack.server.player.Player;
@@ -341,6 +342,14 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         // PlayerLoginEvent is deliberately not fired: this is a server rule, not a plugin veto.
         if (!netherrack.isWhitelisted(username, xuid, uuid)) {
             SessionDisconnect.disconnect(session, netherrack.getWhitelistMessage());
+            return;
+        }
+
+        // Nukkit checks name bans at the same point in processLogin(), after the whitelist and
+        // before the client is allowed to play, so the stored reason reaches the disconnect screen.
+        BanEntry ban = netherrack.banFor(username, xuid, uuid);
+        if (ban != null) {
+            SessionDisconnect.disconnect(session, netherrack.getBanMessage(ban.reason()));
             return;
         }
 
