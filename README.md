@@ -199,7 +199,7 @@ Open Bedrock Edition on the same machine (or network) and connect to the server 
 | --- | --- | --- |
 | `server-name` | `Netherrack Server` | Name shown in the server list |
 | `gamemode` | `survival` | Default game mode for new players |
-| `difficulty` | `normal` | `peaceful`, `easy`, `normal`, or `hard` (not enforced yet; gameplay currently runs on easy) |
+| `difficulty` | `normal` | `peaceful`, `easy`, `normal`, or `hard` (stored in the world and synced to players; mob/combat difficulty rules are still limited) |
 | `max-players` | `20` | Maximum concurrent players |
 | `online-mode` | `true` | Generated but currently ignored — NetherNet always requires Xbox authentication |
 | `white-list` | `false` | Only allow players in `whitelist.json`, plus operators, when enabled |
@@ -284,6 +284,9 @@ Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Over
   | `help` | `?` | 0 | List commands or describe one |
   | `version` | `ver` | 0 | Show server version and system information |
   | `gamemode` | — | 2 | Change a player's game mode |
+  | `difficulty` | — | 2 | Show or change the world difficulty |
+  | `time` | — | 2 | Query, set, or add to the world time |
+  | `weather` | — | 2 | Set clear, rain, or thunder weather |
   | `give` | — | 2 | Give a player an item |
   | `clear` | — | 2 | Empty a player's inventory |
   | `kill` | — | 2 | Kill a player |

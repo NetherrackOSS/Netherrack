@@ -418,6 +418,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             chunkView.sendWithin(SPAWN_CHUNK_RADIUS);
             chunkViews.add(chunkView);
             sendOwnPlayerState();
+            players.sendWeather(player, world.isRaining(), world.isThundering());
 
             PlayStatusPacket spawn = new PlayStatusPacket();
             spawn.setStatus(PlayStatusPacket.Status.PLAYER_SPAWN);
@@ -1230,15 +1231,15 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         startGame.setDimensionId(0); // overworld
         startGame.setGeneratorId(world.getGeneratorType());
         startGame.setLevelGameType(netherrack.getDefaultGameMode());
-        startGame.setDifficulty(1);
+        startGame.setDifficulty(world.getDifficulty());
         startGame.setDefaultSpawn(world.getSpawn());
         startGame.setAchievementsDisabled(true);
         startGame.setDayCycleStopTime(0);
         startGame.setEduEditionOffers(0);
         startGame.setEduFeaturesEnabled(false);
         startGame.setEducationProductionId("");
-        startGame.setRainLevel(0);
-        startGame.setLightningLevel(0);
+        startGame.setRainLevel(world.isRaining() ? 1.0f : 0.0f);
+        startGame.setLightningLevel(world.isThundering() ? 1.0f : 0.0f);
         startGame.setPlatformLockedContentConfirmed(false);
         startGame.setMultiplayerGame(true);
         startGame.setBroadcastingToLan(true);
@@ -1279,7 +1280,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         startGame.setRewindHistorySize(0);
         startGame.setServerAuthoritativeBlockBreaking(true);
 
-        startGame.setCurrentTick(0);
+        startGame.setCurrentTick(world.getTime());
         startGame.setEnchantmentSeed(0);
         startGame.setBlockPalette(vanillaData.getBlockPalette());
         // The vanilla blocks defined in the vanilla behavior pack rather than built into the

@@ -9,8 +9,6 @@
 - **Burning dropped items:** item entities now take Cloudburst Nukkit-style damage from lava and
   fire, show the `ON_FIRE` flag while alight, and keep taking afterburn damage for up to eight
   seconds after leaving the hazard. Netherite items are fireproof and burn off faster.
-  `tests/run-item-hazard.sh` checks the damage numbers, flowing lava and soul fire, afterburn,
-  the netherite exception, and cleanup of items left in unloaded chunks.
 - **Shift-click crafting:** shift-clicking a recipe in the 2×2 or 3×3 crafting book now asks
   the server for a whole batch instead of one result. The server checks the requested number
   of crafts, verifies that the inventory consumes cover its own copy of the recipe (including
@@ -37,6 +35,13 @@
   without restarting. Logging reload includes the console DEBUG switch and per-level enable flags;
   plugin reload disables loaded plugins, clears their listeners/commands/tasks/permissions, and
   discovers jars in `plugins/` again.
+- **Time and weather commands:** `/time query|set|add` and `/weather clear|rain|thunder` change the
+  world's time and weather, broadcast `SetTimePacket`/level weather events to players, and persist
+  the values in `level.dat`. Nukkit-style time names like `day`, `night`, `noon`, `midnight`,
+  `sunrise` and `sunset` are accepted.
+- **Difficulty command and wiring:** `/difficulty` shows or sets peaceful/easy/normal/hard. The
+  configured difficulty is stored in new worlds, loaded from `level.dat`, synced through
+  `StartGamePacket`/`SetDifficultyPacket`, and saved back to `server.properties` and `level.dat`.
 - **Separate plugin API artifact:** the lifecycle contracts live in `NetherrackAPI`, built by
   JitPack from `v0.4.0-SNAPSHOT` and consumed with `provided` scope by plugins. The server declares
   the same artifact and shades it into `netherrack.jar`.
@@ -53,16 +58,14 @@
   `whitelist.json`, with operators always allowed. Entries can store a gamertag, XUID, UUID or any
   combination, so offline names and renamed accounts keep working. `/whitelist on|off|list|reload`
   and `/whitelist add|remove <player>` manage it at command level 3; the disconnect reason comes
-  from `messages.server-whitelist` in `netherrack.yml`. `tests/run-whitelist.sh` checks the JSON
-  store, identifier matching, hand edits and the saved toggle.
+  from `messages.server-whitelist` in `netherrack.yml`.
 - **Bans:** a Cloudburst Nukkit-style `banned-players.json` now stores each ban's lowercase name,
   creation date, source, expiry and reason, with XUID and UUID saved too when the player is
   online so a gamertag change doesn't lift the ban. Banned players are turned away at login with
   the reason from `messages.server-ban` in `netherrack.yml`. `/ban <player> [reason...]` kicks an
   online target as well; `/pardon <player>` (alias `/unban`) removes bans and `/banlist` lists them
   or reloads the file. All three are level 2, like Nukkit's operator-only ban commands; Nukkit's
-  `/banlist ips` is accepted but Netherrack doesn't keep IP bans. `tests/run-ban.sh` checks the
-  saved fields, identifier matching, expiry and hand edits.
+  `/banlist ips` is accepted but Netherrack doesn't keep IP bans.
 - **`/clear` command:** operators with command level 2 or higher can empty a target player's
   inventory, including armor, offhand and anything on the cursor or in a crafting grid. Players
   can clear their own inventory with `/clear` or `/clear @s`.
@@ -105,8 +108,6 @@
 - **API regression checks:** the separate `NetherrackAPI` repository has plain-Java checks for
   lifecycle, config, event ordering, cancellation, failure isolation, unregister-on-disable,
   commands, permissions, locations, game modes, block state properties and form JSON/callbacks.
-  The server also has `tests/run-form.sh` for form ids, packet JSON, stale responses, close
-  callbacks and disconnect cleanup.
 
 ### Changed
 - Startup logs the running Netherrack version, git commit and GPL notice once NetherNet signaling
@@ -128,11 +129,12 @@
   `\uXXXX` escapes, which raw ANSI color values need.
 - README, installation and third-party notices now describe `v0.4.0-beta`; the README logo,
   tagline and badges are unchanged. The README documents every logging setting and lists the new
-  commands.
+  commands, including `/time`, `/weather` and `/difficulty`.
 - A design document at `PLUGIN_API_PLAN.md` records the plugin API boundaries, event plan,
   implementation phases and the threading rule for each event.
 - `/reload` now also hot-reloads plugins after reapplying logging settings, so a replaced jar in
   `plugins/` can be picked up without a full restart.
+- The shutdown thread is named `main`, which fits the localized shutdown log format more naturally.
 
 ### Known limitations
 - Plugin hot-reload is best-effort and follows Nukkit's broad reload shape; for classloader or

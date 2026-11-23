@@ -1,5 +1,6 @@
 package com.netherrack.server.world;
 
+import com.netherrack.server.Netherrack;
 import com.netherrack.server.NetherrackConfig;
 import com.netherrack.server.ServerConfig;
 import com.netherrack.server.block.Block;
@@ -77,7 +78,7 @@ public class WorldManager {
         }
 
         WorldStorage storage = WorldStorage.open(directory.resolve(DATABASE_DIRECTORY));
-        return new World(displayName(directory, level, levelName), generator, storage, level);
+        return new World(displayName(directory, level, levelName), generator, storage, levelDat, level);
     }
 
     /**
@@ -109,7 +110,7 @@ public class WorldManager {
      * The level.dat of a new world, flat with these layers or else infinite. Vanilla fills
      * in anything it needs that isn't here (game rules and the like) when it opens the world.
      */
-    private static NbtMap newLevel(String levelName, FlatPreset flat) {
+    private NbtMap newLevel(String levelName, FlatPreset flat) {
         List<Integer> version = gameVersion();
         return NbtMap.builder()
                 .putString("LevelName", levelName)
@@ -130,7 +131,7 @@ public class WorldManager {
                 .putLong("Time", 0L)
                 .putLong("currentTick", 0L)
                 .putLong("LastPlayed", System.currentTimeMillis() / 1000L)
-                .putInt("Difficulty", 1) // easy
+                .putInt("Difficulty", Netherrack.parseDifficulty(config.get("difficulty", "normal")))
                 .putByte("commandsEnabled", (byte) 1)
                 .putByte("hasBeenLoadedInCreative", (byte) 0)
                 .putByte("immutableWorld", (byte) 0)

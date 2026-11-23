@@ -2,24 +2,27 @@ package com.netherrack.server;
 
 import com.netherrack.api.plugin.PluginLoadOrder;
 import com.netherrack.server.command.AvailableCommands;
+import com.netherrack.server.command.BanCommand;
+import com.netherrack.server.command.BanListCommand;
 import com.netherrack.server.command.ClearCommand;
 import com.netherrack.server.command.CommandManager;
 import com.netherrack.server.command.ConsoleCommandSender;
 import com.netherrack.server.command.DeopCommand;
+import com.netherrack.server.command.DifficultyCommand;
 import com.netherrack.server.command.GamemodeCommand;
 import com.netherrack.server.command.GiveCommand;
 import com.netherrack.server.command.HelpCommand;
 import com.netherrack.server.command.KickCommand;
 import com.netherrack.server.command.KillCommand;
 import com.netherrack.server.command.OpCommand;
-import com.netherrack.server.command.PluginsCommand;
-import com.netherrack.server.command.BanCommand;
-import com.netherrack.server.command.BanListCommand;
 import com.netherrack.server.command.PardonCommand;
+import com.netherrack.server.command.PluginsCommand;
 import com.netherrack.server.command.ReloadCommand;
 import com.netherrack.server.command.StopCommand;
+import com.netherrack.server.command.TimeCommand;
 import com.netherrack.server.command.TpCommand;
 import com.netherrack.server.command.VersionCommand;
+import com.netherrack.server.command.WeatherCommand;
 import com.netherrack.server.command.WhitelistCommand;
 import com.netherrack.server.crafting.Recipes;
 import com.netherrack.server.entity.ItemEntities;
@@ -102,6 +105,9 @@ public class Netherrack {
         commandManager.register(new VersionCommand());
         commandManager.register(new HelpCommand());
         commandManager.register(new GamemodeCommand());
+        commandManager.register(new DifficultyCommand());
+        commandManager.register(new TimeCommand());
+        commandManager.register(new WeatherCommand());
         commandManager.register(new OpCommand());
         commandManager.register(new DeopCommand());
         commandManager.register(new KillCommand());
@@ -386,7 +392,7 @@ public class Netherrack {
         if (!stopping.compareAndSet(false, true)) {
             return;
         }
-        Thread thread = new Thread(this::stopServer, "Server shutdown");
+        Thread thread = new Thread(this::stopServer, "main");
         thread.start();
     }
 
@@ -426,6 +432,7 @@ public class Netherrack {
         }
         Logger.info(Lang.current.get("server.saving_level", config.get("level-name", "Bedrock level")));
         savePlayers();
+        world.saveLevelDat();
         world.close();
     }
 
@@ -447,6 +454,7 @@ public class Netherrack {
             try {
                 savePlayers();
                 int saved = world.save();
+                world.saveLevelDat();
                 if (saved > 0) {
                     Logger.debug("Autosave wrote " + saved + " chunks.");
                 }
@@ -465,6 +473,42 @@ public class Netherrack {
             return GameType.SURVIVAL;
         }
         return gameMode;
+    }
+
+    /** The world's difficulty: 0 peaceful, 1 easy, 2 normal, 3 hard. */
+    public int getDifficulty() {
+        return world != null ? world.getDifficulty() : parseDifficulty(config.get("difficulty", "normal"));
+    }
+
+    public void setDifficulty(int difficulty) {
+        int clamped = Math.max(0, Math.min(3, difficulty));
+        config.set("difficulty", difficultyName(clamped));
+        if (world != null) {
+            world.setDifficulty(clamped);
+        }
+    }
+
+    public static int parseDifficulty(String value) {
+        if (value == null) {
+            return 2;
+        }
+        return switch (value.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "peaceful", "p", "0" -> 0;
+            case "easy", "e", "1" -> 1;
+            case "normal", "n", "2" -> 2;
+            case "hard", "h", "3" -> 3;
+            default -> 2;
+        };
+    }
+
+    public static String difficultyName(int difficulty) {
+        return switch (difficulty) {
+            case 0 -> "peaceful";
+            case 1 -> "easy";
+            case 2 -> "normal";
+            case 3 -> "hard";
+            default -> "normal";
+        };
     }
 
     /** default-player-permission-level from server.properties: what players without a permissions.json entry get. */
