@@ -6,7 +6,7 @@
 
     <groupId>com.netherrack</groupId>
     <artifactId>netherrack-server</artifactId>
-    <version>0.3.0-alpha</version>
+    <version>0.4.0-beta</version>
     <packaging>jar</packaging>
 
     <name>Netherrack</name>
@@ -16,6 +16,10 @@
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- The plugin API tag this server builds against. Both the dependency below and the
+             version printed by /version read this, so they can't drift apart. -->
+        <netherrack.api.version>v0.4.0-SNAPSHOT</netherrack.api.version>
 
         <!-- CloudburstMC libraries used for the NetherNet transport + Bedrock protocol layer.
              Credit: https://github.com/CloudburstMC/Network and https://github.com/CloudburstMC/Protocol
@@ -60,9 +64,22 @@
                 <enabled>true</enabled>
             </snapshots>
         </repository>
+        <!-- JitPack builds the plugin API straight from the NetherrackAPI git tag. -->
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
     </repositories>
 
     <dependencies>
+        <!-- Plugin API contracts. JitPack publishes this from the v0.4.0-SNAPSHOT tag, and the
+             shade plugin below bundles it into netherrack.jar so plugins use the server's copy. -->
+        <dependency>
+            <groupId>com.github.NetherrackOSS</groupId>
+            <artifactId>NetherrackAPI</artifactId>
+            <version>${netherrack.api.version}</version>
+        </dependency>
+
         <!-- NetherNet transport (Netty-based), replacing RakNet. -->
         <dependency>
             <groupId>org.cloudburstmc.netty</groupId>
@@ -141,14 +158,16 @@
     <build>
         <finalName>netherrack</finalName>
         <resources>
-            <!-- Only version.properties is filtered (its ${project.version} is replaced with the
-                 version above, which is where VersionInfo reads it from). Everything else is
-                 copied as it is - filtering would corrupt the binary .nbt data files. -->
+            <!-- Only the two version properties are filtered: one takes ${project.version}, the
+                 other the plugin API tag above, which is where VersionInfo reads them from.
+                 Everything else is copied as it is - filtering would corrupt the binary .nbt
+                 data files. -->
             <resource>
                 <directory>src/main/resources</directory>
                 <filtering>false</filtering>
                 <excludes>
                     <exclude>version.properties</exclude>
+                    <exclude>plugin-api-version.properties</exclude>
                 </excludes>
             </resource>
             <resource>
@@ -156,6 +175,7 @@
                 <filtering>true</filtering>
                 <includes>
                     <include>version.properties</include>
+                    <include>plugin-api-version.properties</include>
                 </includes>
             </resource>
         </resources>

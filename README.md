@@ -21,49 +21,89 @@
 </p>
 
 > [!WARNING]
-> Netherrack is currently in alpha. Expect missing features, bugs and glitches.
+> Netherrack **v0.4.0-beta** is experimental software. Expect missing features, bugs, and
+> glitches. Do not use it for a production server or a world you care about without keeping
+> independent backups.
+
+> [!NOTE]
+> Netherrack is not affiliated with, endorsed by, or sponsored by Mojang Studios or Microsoft.
 
 # ℹ️ Information
-Netherrack is an experimental vibe coded Minecraft: Bedrock Edition server software project focused on learning, experimentation, and building a server implementation from the ground up.
-> [!IMPORTANT]
-> Netherrack is not afilliated with Mojang or Microsoft.
+
+Netherrack is an experimental, from-scratch Minecraft: Bedrock Edition server written in Java.
+It is a learning and experimentation project: the server architecture is developed
+independently rather than as a clone of another implementation, and APIs and behavior may
+change between releases.
+
+This beta targets **Minecraft: Bedrock Edition 1.26.60** (`Bedrock_v2225`). Bedrock 1.26.60
+replaced RakNet with **NetherNet**, so Netherrack uses that transport exclusively — old
+RakNet-based clients and servers are not supported. Multi-version support is not implemented;
+clients on other versions may be rejected or behave unexpectedly.
 
 # 🛠️ Getting Started
-Netherrack is written and running in Java 17. So you need to install Java 17 or newer. After you've installed Java 17 or newer, there are currently two ways to install Netherrack.
 
-## 🔨 Downloading Netherrack
-To download Netherrack, head to the [Releases](https://github.com/NetherrackOSS/Netherrack/releases) page for the GitHub repository, download the latest JAR file, move the JAR file to another directory (example: ``netherrack-server``), then launch it via:
+## Requirements
 
-```
+- **Java 17 or newer** (`java --version` to check)
+- **Minecraft: Bedrock Edition 1.26.60** to connect
+- **Git**, only if building from source
+- A free **port 19132** (configurable) for the server's HTTP signaling and game traffic
+
+The NetherNet native WebRTC library is bundled in the JAR. On Linux/macOS you may need the
+JVM flags used by the included start scripts to allow native memory access; see below.
+
+## 🔨 Install from a release
+
+1. Download the latest JAR from the [Releases](https://github.com/NetherrackOSS/Netherrack/releases) page.
+2. Move it into a dedicated directory, for example `netherrack-server`, and rename it to
+   `netherrack.jar` if needed.
+3. Launch it:
+
+```bash
 java -jar netherrack.jar
 ```
 
-## 🔧 Compiling from source
-To compile Netherrack from source, you'll need:
-- Git
-- Java 17 or newer
+## 🔧 Build from source
 
-Run these commands in your terminal or command prompt:
-```
-git clone https://github.com/NetherrackOSS/Netherrack
+```bash
+git clone https://github.com/NetherrackOSS/Netherrack.git
 cd Netherrack
 ```
 
-To compile Netherrack, run this command if you're on a Unix-based OS like Mac or Linux.
-```
-./mvnw clean package
-```
-Or if you're on Windows:
-```
-mvnw.cmd clean package
+Then build with the Maven wrapper — no separate Maven installation required:
+
+```bash
+bash mvnw clean package    # Linux/macOS
+mvnw.cmd clean package     # Windows
 ```
 
-After compiling, the JAR file should be located at the ``target`` directory of the source code.
+The shaded, runnable JAR is written to `target/netherrack.jar`.
 
-After running ``java -jar netherrack.jar`` or launching it via a start script for the first time, you should see something like this:
+## 🧭 First run
+
+The first launch (when `server.properties` is missing) runs an interactive setup wizard:
+
+1. Choose a console language: `en-US` (English) or `pt-BR` (Português). Press Enter for `en-US`.
+2. Read the GPLv3 notice and accept the license with `y` (or `yes` / `s` / `sim`). The server
+   will not start without accepting it.
+3. Choose whether to enter the server setup steps. Press Enter to use the defaults, or answer
+   `n` to configure them.
+4. Enter the server MOTD (`server-name`), or press Enter for `Netherrack Server`.
+5. Enter the server port (`server-port`), or press Enter for `19132`.
+6. Pick the default gamemode (`gamemode`): `0` Survival, `1` Creative, `2` Adventure or
+   `3` Spectator. Names and aliases work too.
+7. Enter the maximum player count (`max-players`), or press Enter for `20`.
+8. Review the local and external addresses, then press Enter to start. The external address is
+   a short lookup through a public IP service; if it fails, the summary says so. It is only a
+   convenience &mdash; nothing is sent anywhere else.
+
+If standard input is piped rather than attached to a terminal, steps 3&ndash;8 are skipped and
+the defaults are used. This keeps scripted launches from swallowing console commands.
+
+You should see something like this:
 
 ```
-[16:01:07] [main] [INFO] Starting Netherrack server version 0.1.0-alpha
+[16:01:07] [main] [INFO] Starting Netherrack server version 0.4.0-beta
 [16:01:07] [main] [INFO] First-time setup detected. Launching setup wizard...
 
 ═══════════════════════════════════════════════════════════════
@@ -76,46 +116,250 @@ Welcome! Please select a language first.
   [en-US] English (United States)
   [pt-BR] Português (Brasil)
 
-» Language [en-US]: 
+» Language [en-US]:
 ```
 
-> Encountering issues? Ensure Java 17 or newer is installed (run ``java --version`` on your terminal or command prompt to check your Java version) and that port 19132 isn't already in use.
+The optional configuration screens look like this:
 
-## 🚧 Current status
+```
+═══════════════════════════════════════════════════════════════
+                    Setup Configuration
+═══════════════════════════════════════════════════════════════
 
-Netherrack is currently in **early development**.
+You can choose to skip the setup wizard and use default configuration settings.
 
-The project started as a server-software simulation and is gradually being turned into a real Bedrock server. Features are incomplete and APIs may change significantly.
+[*] All of these settings can be modified later in the server.properties configuration file.
 
-### Currently implemented
+» Do you want to skip the setup wizard? (Y/n): n
+✓ Proceeding with setup...
 
-- [x] Java/Maven project
-- [x] Server startup and shutdown lifecycle
-- [x] `server.properties` configuration
-- [x] Console command handling
-- [x] Colored console logging
-- [x] Linux support/testing
-- [x] RakNet networking
-- [x] Bedrock protocol integration
-- [x] Basic Bedrock login handling
-- [x] Initial block system
-- [x] Grass block
-- [x] Cobblestone block
-- [ ] Complete world system
-- [x] Chunk loading and generation
-- [x] Client connection to a Bedrock client
-- [ ] Complete Bedrock play/login flow
-- [ ] Entity system
-- [x] Persistent world storage
-- [ ] Plugin API
-- [ ] More blocks and gameplay features
+═══════════════════════════════════════════════════════════════
+                   Server Configuration
+═══════════════════════════════════════════════════════════════
 
-## 🧱 Project goals
+» Enter server MOTD (default: Netherrack Server):
+✓ Server MOTD set to: Netherrack Server
 
-The long-term goal is to create a flexible, open-source Bedrock server software implementation while learning more about Java, networking, Minecraft's Bedrock protocol, world systems, and server architecture.
+───────────────────────────────────────────────────────────────
+» Enter server port (default: 19132):
+✓ Server port set to: 19132
 
-Netherrack is **not intended to be a clone of another server implementation**. The server architecture and functionality are being developed independently.
+───────────────────────────────────────────────────────────────
+[*] Available gamemodes:
+» [0] Survival
+» [1] Creative
+» [2] Adventure
+» [3] Spectator
 
-## 🌐 Networking
+» Enter default gamemode (default: 0 (Survival)):
+✓ Default gamemode set to: Survival
 
-Netherrack uses open-source CloudburstMC components for networking and Bedrock protocol functionality.
+───────────────────────────────────────────────────────────────
+» Maximum number of players [20]:
+✓ Maximum players: 20
+
+═══════════════════════════════════════════════════════════════
+                  Configuration complete!
+═══════════════════════════════════════════════════════════════
+
+✓ Your server is now configured and available at:
+
+» Local Server Address: 192.168.1.7:19132
+» External Server Address: 203.0.113.7:19132
+
+═══════════════════════════════════════════════════════════════
+
+Press ENTER to start the server...
+```
+
+The first run creates:
+
+| File | Purpose |
+| --- | --- |
+| `server.properties` | Server and world settings |
+| `netherrack.yml` | Netherrack-specific settings (logs, messages, flat preset) |
+| `permissions.json` | Operator/permission data |
+| `whitelist.json` | Players allowed in when `white-list` is enabled |
+| `banned-players.json` | Banned players, their reasons and who banned them |
+| `nethernet-identity.pem` | Persistent NetherNet server identity (EC key pair) |
+| `logs/latest.log` | Console copy plus optional debug detail |
+| `worlds/Bedrock level/` | The default world (`level.dat`, `levelname.txt`, `db/`) |
+
+Open Bedrock Edition on the same machine (or network) and connect to the server IP on port
+`19132`. Players joining and leaving are announced in chat and in the console.
+
+> Encountering issues? Check that Java 17+ is installed, that port 19132 is free, and that
+> your client is version 1.26.60. See [INSTALLATION.md](INSTALLATION.md) for additional notes.
+
+# ⚙️ Configuration
+
+`server.properties` is generated with these defaults:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `server-name` | `Netherrack Server` | Name shown in the server list |
+| `gamemode` | `survival` | Default game mode for new players |
+| `difficulty` | `normal` | `peaceful`, `easy`, `normal`, or `hard` (stored in the world and synced to players; mob/combat difficulty rules are still limited) |
+| `max-players` | `20` | Maximum concurrent players |
+| `online-mode` | `true` | Generated but currently ignored — NetherNet always requires Xbox authentication |
+| `white-list` | `false` | Only allow players in `whitelist.json`, plus operators, when enabled |
+| `server-port` | `19132` | Listening port |
+| `server-ip` | `0.0.0.0` | Bind address; `0.0.0.0` listens on all interfaces |
+| `view-distance` | `32` | View distance in chunks (5 or more) |
+| `level-name` | `Bedrock level` | World name and folder under `worlds/` |
+| `default-player-permission-level` | `member` | `visitor`, `member`, or `operator` |
+| `language` | wizard choice | Console language (`en-US` or `pt-BR`) |
+| `level-type` | `default` | `default` for generated terrain, `flat` for flat presets |
+| `op-permission-level` | `2` | Command access granted to operators (0–4) |
+
+`level-type` only decides the generator of a **new** world; existing worlds keep theirs.
+
+`netherrack.yml` holds Netherrack's own settings:
+
+| Section | Key | Default | Meaning |
+| --- | --- | --- | --- |
+| `logs` | `debug` | `false` | Write every packet and debug detail to `logs/latest.log` |
+| `logging` | `info-format`, `warn-format`, `error-format`, `debug-format` | `[{time}] [{thread}] [{level}] {message}` | Console pattern for each level |
+| `logging` | `format` | same as above | Fallback for levels without their own pattern |
+| `logging` | `prefix`, `suffix` | empty | Text inserted by `{prefix}` and `{suffix}` |
+| `logging` | `<level>-prefix`, `<level>-suffix` | shared values | Per-level overrides for those placeholders |
+| `logging` | `time-format` | `HH:mm:ss` | Java time pattern used for `{time}` |
+| `logging` | `date-format` | `yyyy-MM-dd` | Java date pattern used for `{date}` |
+| `logging` | `colors` | `auto` | `auto` detects a terminal; `true` and `false` force colors on or off |
+| `logging` | `console-debug` | `false` | Show DEBUG lines on the console using `debug-format` |
+| `logging` | `<level>-enabled` | `true` | Hide a level on the console while keeping it in the log file |
+| `labels` | `timestamp-color`, `thread-color`, `info-color`, `warn-color`, `error-color`, `debug-color` | `cyan`, `yellow`, `blue`, `red`, `bright-red`, `null`, `null` | Named color for each label; `null` leaves it plain |
+| `labels` | `bracket-color` | `null` | Named color for brackets around placeholders; `null` leaves them plain |
+| `messages` | `server-shutdown` | `Server closed` | Message shown to players when the server closes |
+| `messages` | `server-whitelist` | `You are not whitelisted on this server!` | Disconnect reason shown to players turned away by the whitelist |
+| `messages` | `server-ban` | `You are banned!` | Disconnect reason shown to banned players; the stored reason is appended |
+| `level` | `preset-type` | `Classic Flat` | Flat preset used for new `flat` worlds |
+
+The `logging` and `labels` sections are read before the server prints its first line, so the
+startup messages use them too. If either section or a key is missing, that setting falls back
+to the default shown above. The `reload` command re-reads them without a restart.
+
+Formats have two kinds of placeholder. `{time}`, `{date}`, `{millis}`, `{thread}`, `{level}`,
+`{message}`, `{prefix}` and `{suffix}` insert values. `<name>` inserts a color, a style
+(`<bold>`, `<italic>`, `<underline>`, `<reset>`), or any of those same values — for example
+`[<yellow>{time}] <bold>{level}<reset> {message}`. `<null>` inserts nothing. These work
+alongside `labels.*`, and a trailing reset is added when needed so an inline color can't carry
+into the console prompt.
+
+Label colors are names: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`,
+`gray`, and `bright-` variants of each, plus `purple` and `grey` as aliases. Hex values such as
+`#ff8800` work too. Raw ANSI escape sequences written as `"\u001B[36m"` still work. With
+`colors: auto`, escape codes are dropped when output is piped to a file.
+
+DEBUG lines go only to the log file unless `console-debug: true` is set, which makes them use
+`debug-format` on the console too. Per-level `*-enabled` keys hide a level from the console
+without removing it from the log file.
+
+Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Overworld`,
+`Snowy Kingdom`, `Bottomless Pit`, `Desert`, `Redstone Ready`, and `The Void`.
+
+# ✨ Features
+
+- **NetherNet networking** — WebRTC (ICE/DTLS/SCTP) transport via CloudburstMC's Network
+  library, with Xbox Live token authentication and a persistent server identity.
+- **Worlds and terrain** — seed-based "infinite" worlds with rolling hills, valleys, lakes,
+  sandy shores, stone/dirt/grass layers, a jagged bedrock floor, and scattered oak trees.
+  New levels spawn on dry ground. Nine vanilla flat presets remain available.
+- **Chunk streaming and persistence** — chunks load as players move, worlds save to LevelDB,
+  and the server autosaves every 30 seconds.
+- **Players and gameplay** — login, movement, chat, join/leave messages, four game modes,
+  health and hunger, eating, block breaking and placement, middle-click pick block, drops, and
+  item entities that can be picked up, burn in lava or fire, and despawn over time.
+- **Combat** — player-versus-player hits with vanilla-like reach, weapon damage and knockback,
+  invulnerability ticks, creative/spectator protections, and dropped inventories on death.
+- **Inventory and crafting** — the 2×2 inventory grid and a right-clickable 3×3 crafting
+  table. All 4,770 recipes for this protocol version are sent to the client; the server
+  validates grid shapes, consumes ingredients, and hands out results. Ingredient tags and
+  data-carrying outputs such as banners and firework rockets work. Shift-clicking a recipe
+  crafts as many stacks as the available ingredients and inventory space allow.
+- **Commands** — built-in console and chat commands with permission levels:
+
+  | Command | Alias | Min. level | Description |
+  | --- | --- | --- | --- |
+  | `help` | `?` | 0 | List commands or describe one |
+  | `version` | `ver` | 0 | Show server version and system information |
+  | `gamemode` | — | 2 | Change a player's game mode |
+  | `difficulty` | — | 2 | Show or change the world difficulty |
+  | `time` | — | 2 | Query, set, or add to the world time |
+  | `weather` | — | 2 | Set clear, rain, or thunder weather |
+  | `give` | — | 2 | Give a player an item |
+  | `clear` | — | 2 | Empty a player's inventory |
+  | `kill` | — | 2 | Kill a player |
+  | `kick` | — | 2 | Disconnect a player, optionally with a reason |
+  | `ban` | — | 2 | Ban a player, optionally with a reason |
+  | `pardon` | `unban` | 2 | Remove a player ban |
+  | `banlist` | — | 2 | List bans or reload `banned-players.json` |
+  | `tp` | — | 2 | Teleport a player (players or coordinates, with `~` relative support) |
+  | `op` / `deop` | — | 3 | Grant or remove operator status |
+  | `whitelist` | `wl` | 3 | Turn the whitelist on/off, list entries, or add/remove players |
+  | `reload` | `rl` | 4 | Reload logging settings and plugins |
+  | `plugins` | `pl` | 0 | List installed plugins |
+  | `stop` | — | 4 | Stop the server gracefully |
+
+- **Whitelist** — an optional player allowlist in `whitelist.json`. Entries can use a gamertag,
+  XUID or UUID, so offline players can be added by name and online players keep working after a
+  gamertag change. Operators bypass it, and `/whitelist on|off|list|add|remove|reload` manages it
+  without a restart.
+- **Bans** — a Cloudburst Nukkit-style `banned-players.json` keeps each ban's name, reason, source,
+  creation date and expiry. XUID and UUID are saved when known so bans survive gamertag changes,
+  and `/ban`, `/pardon` (`/unban`) and `/banlist` manage them for operators. IP bans aren't kept.
+- **Localization and logging** — English (US) and Brazilian Portuguese console messages,
+  customizable per-level console formats and colors, plain log files, and optional verbose
+  debug logging and plugins that can be reloaded at runtime.
+- **Plugin API** — jars in `plugins/` are read in dependency order and get `onLoad()`, `onEnable()`
+  and `onDisable()` callbacks. Plugins can register listeners with priorities and cancellation for
+  server, player and block events, declare commands in `plugin.yml`, schedule delayed and repeating
+  tick tasks, and register permission nodes with wildcard matching and per-player attachments. They
+  can also read player locations and game modes, teleport players, open simple Bedrock forms, and
+  read or replace blocks as immutable snapshots. `examples/hello-plugin/` is a minimal Maven plugin
+  showing all of them, including a `/testform` command.
+
+# 🚧 Current status
+
+v0.4.0-beta is an early beta, not a feature-complete server. Known gaps and untested areas
+include:
+
+- Long-term stability, many simultaneous players, and shutdown or crash edge cases.
+- Compatibility with Bedrock client versions other than 1.26.60.
+- Terrain variety: no caves, ores, flowers, or multiple biomes yet — every generated chunk is
+  plains.
+- Plugin hot-reload exists through `/reload`, but it is best-effort; a full restart is still the
+  safest option after complex plugin changes.
+- Furnace, stonecutter, and smithing screens and their interactions are not implemented.
+- Death drops landing in unloaded chunks or the void are untested.
+- Client movement is not validated server-side, so positions are currently accepted as reported.
+- Some bundled vanilla data is from versions just before 1.26.60; a few newer blocks or
+  entities may be missing or appear as the unknown-block texture.
+
+Bugs and limitations beyond this list may still be discovered. Please report issues with
+logs, reproduction steps, your Java/OS details, and your Bedrock client version.
+
+# 🧱 Project goals
+
+The long-term goal is a flexible, open-source Bedrock server implementation built while
+learning about Java, networking, the Bedrock protocol, world systems, and server
+architecture. Netherrack is not intended to be a clone of another server implementation.
+
+# 📜 Licensing and credits
+
+Netherrack uses open-source components from [CloudburstMC](https://github.com/CloudburstMC)
+(Network and Protocol), the [libdatachannel](https://github.com/opencollab-incubator/libdatachannel-java)
+WebRTC binding, [leveldb-mcpe-java](https://github.com/HiveGamesOSS/leveldb-mcpe-java), and
+bundled vanilla data from CloudburstMC/Data, PMMP/BedrockData, Dragonfly, and
+PrismarineJS/minecraft-data. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for versions
+and license details.
+
+Netherrack itself is licensed under the [GNU General Public License v3.0](LICENSE).
+
+## 🌐 Community
+
+- Website: <https://netherrackoss.github.io>
+- Releases: <https://github.com/NetherrackOSS/Netherrack/releases>
+- Issues: <https://github.com/NetherrackOSS/Netherrack/issues>
+- Discord: <https://discord.gg/JFUz2G8H4V>
+- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)

@@ -25,10 +25,10 @@ public class VersionCommand implements Command {
     }
 
     /**
-     * Four lines: what the server is, its version and git commit, and the Java and operating
-     * system it runs on. Sent as text, worded here, rather than as keys: a git commit is
-     * often all digits, and a key's parameter that looks like a number is passed on as one,
-     * which would drop a leading zero from it.
+     * Five lines: what the server is, its version and git commit, the plugin API it builds
+     * against, and the Java and operating system it runs on. Sent as text, worded here, rather
+     * than as keys: a git commit is often all digits, and a key's parameter that looks like a
+     * number is passed on as one, which would drop a leading zero from it.
      */
     @Override
     public void execute(Netherrack server, CommandSender sender, String[] args) {
@@ -36,5 +36,6 @@ public class VersionCommand implements Command {
         sender.sendText(Lang.current.get("command.version.version", VersionInfo.VERSION, VersionInfo.GIT_COMMIT));
         sender.sendText(Lang.current.get("command.version.java", VersionInfo.JAVA_VERSION));
         sender.sendText(Lang.current.get("command.version.os", VersionInfo.OPERATING_SYSTEM));
+        sender.sendText(Lang.current.get("command.version.api", VersionInfo.PLUGIN_API_VERSION));
     }
 }

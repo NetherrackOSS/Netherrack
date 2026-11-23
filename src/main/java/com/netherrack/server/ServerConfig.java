@@ -8,7 +8,9 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Collectors;
 
@@ -26,13 +28,17 @@ public class ServerConfig {
                         "Allowed values: Any string without semicolon symbol"),
                 new Setting("gamemode", "survival",
                         "Sets the game mode for new players",
-                        "Allowed values: \"survival\", \"creative\", or \"adventure\""),
+                        "Allowed values: \"survival\", \"creative\", \"adventure\", or \"spectator\""),
                 new Setting("difficulty", "normal",
                         "Sets the difficulty of the world",
                         "Allowed values: \"peaceful\", \"easy\", \"normal\", or \"hard\""),
                 new Setting("max-players", "20",
                         "The maximum number of players that can play on the server",
                         "Allowed values: Any positive integer"),
+                new Setting("white-list", "false",
+                        "If true, only players listed in whitelist.json (and operators) may join.",
+                        "The whitelist command changes this while the server is running.",
+                        "Allowed values: \"true\" or \"false\""),
                 new Setting("online-mode", "true",
                         "If true then all connected players must be authenticated to Xbox Live.",
                         "Clients connecting to remote (non-LAN) servers will always require Xbox Live authentication"
@@ -92,6 +98,21 @@ public class ServerConfig {
     private static final String CUSTOM_HEADING = "# " + "///// ".repeat(5) + "CUSTOM SERVER PROPERTIES "
             + ("\\".repeat(5) + " ").repeat(5) + "#";
 
+    /**
+     * The values a brand-new server.properties starts with, keyed by property name. The setup
+     * wizard copies this map and replaces a few entries before asking ServerConfig to write it.
+     */
+    public static Map<String, String> defaultValues(String language) {
+        Map<String, String> values = new LinkedHashMap<>();
+        for (Setting setting : vanillaDefaults()) {
+            values.put(setting.key(), setting.value());
+        }
+        for (Setting setting : customDefaults(language)) {
+            values.put(setting.key(), setting.value());
+        }
+        return values;
+    }
+
     private record Setting(String key, String value, String... comment) {
     }
 
@@ -107,9 +128,17 @@ public class ServerConfig {
      *                 just picked in the setup wizard). Ignored if the file already exists.
      */
     public void load(String language) {
+        load(language, Map.of());
+    }
+
+    /**
+     * Loads the config, generating a new file with the supplied overrides when one doesn't
+     * exist yet. Only the setup wizard passes overrides; existing files are never rewritten.
+     */
+    public void load(String language, Map<String, String> overrides) {
         if (!Files.exists(path)) {
             Logger.warn(Lang.current.get("server.config_missing"));
-            writeDefaults(language);
+            writeDefaults(language, overrides);
         }
         try (InputStream in = Files.newInputStream(path)) {
             properties.load(in);
@@ -123,11 +152,11 @@ public class ServerConfig {
      * line; then the heading, set apart by blank lines; then Netherrack's own settings the
      * same way.
      */
-    private void writeDefaults(String language) {
+    private void writeDefaults(String language, Map<String, String> overrides) {
         String newline = System.lineSeparator();
         StringBuilder text = new StringBuilder();
         for (Setting setting : vanillaDefaults()) {
-            write(text, setting, newline);
+            write(text, setting, overrides, newline);
             text.append(newline);
         }
         text.append(newline).append(CUSTOM_HEADING).append(newline).append(newline).append(newline);
@@ -136,7 +165,7 @@ public class ServerConfig {
             if (i > 0) {
                 text.append(newline);
             }
-            write(text, custom.get(i), newline);
+            write(text, custom.get(i), overrides, newline);
         }
         try {
             // Properties files are read as ISO 8859-1; everything written here is plain ASCII.
@@ -146,8 +175,10 @@ public class ServerConfig {
         }
     }
 
-    private static void write(StringBuilder text, Setting setting, String newline) {
-        text.append(setting.key()).append('=').append(setting.value()).append(newline);
+    private static void write(StringBuilder text, Setting setting, Map<String, String> overrides,
+                              String newline) {
+        String value = overrides.getOrDefault(setting.key(), setting.value());
+        text.append(setting.key()).append('=').append(value).append(newline);
         for (String line : setting.comment()) {
             text.append("# ").append(line).append(newline);
         }
@@ -167,5 +198,39 @@ public class ServerConfig {
 
     public boolean getBoolean(String key, boolean defaultValue) {
         return Boolean.parseBoolean(properties.getProperty(key, String.valueOf(defaultValue)));
+    }
+
+    /**
+     * Changes a setting in memory and writes it back to the file. The file is edited line by
+     * line instead of being regenerated so the comments and hand-written settings around it
+     * survive; a setting missing from an older file is appended.
+     */
+    public synchronized void set(String key, String value) {
+        properties.setProperty(key, value);
+        try {
+            List<String> lines = Files.readAllLines(path, StandardCharsets.ISO_8859_1);
+            String assignment = key + "=" + value;
+            boolean found = false;
+            for (int i = 0; i < lines.size(); i++) {
+                if (lines.get(i).trim().startsWith(key + "=")) {
+                    lines.set(i, assignment);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                if (!lines.isEmpty() && !lines.get(lines.size() - 1).isBlank()) {
+                    lines.add("");
+                }
+                lines.add(assignment);
+            }
+            Files.write(path, lines, StandardCharsets.ISO_8859_1);
+        } catch (IOException e) {
+            Logger.error("Failed to save " + path + ": " + e.getMessage());
+        }
+    }
+
+    public void setBoolean(String key, boolean value) {
+        set(key, String.valueOf(value));
     }
 }

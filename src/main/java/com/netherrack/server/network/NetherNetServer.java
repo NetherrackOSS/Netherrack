@@ -100,7 +100,7 @@ public class NetherNetServer {
                         Channel ch = session.getPeer().getChannel();
 
                         if (players.getPlayers().size() >= maxPlayers) {
-                            session.disconnect("Server is full");
+                            SessionDisconnect.disconnect(session, "Server is full");
                             return;
                         }
 
@@ -126,7 +126,8 @@ public class NetherNetServer {
 
                         ch.closeFuture().addListener(f -> {
                             handler.onDisconnect();
-                            Logger.info(handler.getDisplayName() + " disconnected.");
+                            Logger.info(handler.getDisplayName() + " logged out due to: "
+                                    + SessionDisconnect.describe(session));
                         });
                     }
                 })

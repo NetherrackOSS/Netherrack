@@ -1,12 +1,17 @@
 package com.netherrack.server.network;
 
+import com.netherrack.api.event.player.PlayerChatEvent;
+import com.netherrack.api.event.player.PlayerCommandEvent;
+import com.netherrack.api.event.player.PlayerLoginEvent;
 import com.netherrack.server.Netherrack;
 import com.netherrack.server.block.Block;
+import com.netherrack.server.block.BlockEntities;
 import com.netherrack.server.command.AvailableCommands;
 import com.netherrack.server.command.PlayerCommandSender;
 import com.netherrack.server.crafting.Recipes;
 import com.netherrack.server.entity.EntityIds;
 import com.netherrack.server.entity.ItemEntities;
+import com.netherrack.server.player.BanEntry;
 import com.netherrack.server.player.Foods;
 import com.netherrack.server.player.Permission;
 import com.netherrack.server.player.Player;
@@ -15,6 +20,7 @@ import com.netherrack.server.player.PlayerInventory;
 import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.player.PlayerSurvival;
 import com.netherrack.server.player.SkinParser;
+import com.netherrack.server.plugin.EventBridge;
 import com.netherrack.server.util.ColorCodes;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.world.World;
@@ -62,6 +68,7 @@ import org.cloudburstmc.protocol.bedrock.packet.AvailableEntityIdentifiersPacket
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacketHandler;
 import org.cloudburstmc.protocol.bedrock.packet.BiomeDefinitionListPacket;
+import org.cloudburstmc.protocol.bedrock.packet.BlockPickRequestPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ChunkRadiusUpdatedPacket;
 import org.cloudburstmc.protocol.bedrock.packet.CommandRequestPacket;
 
@@ -77,6 +84,7 @@ import org.cloudburstmc.protocol.bedrock.packet.ItemStackRequestPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ItemStackResponsePacket;
 import org.cloudburstmc.protocol.bedrock.packet.JigsawStructureDataPacket;
 import org.cloudburstmc.protocol.bedrock.packet.MobEquipmentPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ModalFormResponsePacket;
 import org.cloudburstmc.protocol.bedrock.packet.MovePlayerPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LevelSoundEventPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LoginPacket;
@@ -171,7 +179,8 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         this.players = players;
         this.netherrack = netherrack;
         this.itemEntities = netherrack.getItemEntities();
-        this.blockInteraction = new BlockInteraction(world, players, itemEntities, netherrack.getScheduler());
+        this.blockInteraction = new BlockInteraction(world, players, itemEntities, netherrack.getScheduler(),
+                netherrack);
         this.chunkViews = netherrack.getChunkViews();
         this.chunkView = new ChunkView(session, world);
     }
@@ -244,7 +253,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
                     session.getPeer().getChannel(), identityClaims.parsedIdentityPublicKey());
             if (mismatch != null) {
                 Logger.warn("Disconnecting " + username + ": " + mismatch);
-                session.disconnect(mismatch);
+                SessionDisconnect.disconnect(session, mismatch);
                 return PacketSignal.HANDLED;
             }
         } catch (Exception e) {
@@ -329,6 +338,29 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         Permission permission = netherrack.getPermissions().of(xuid);
         player.setPermission(permission, netherrack.commandLevelFor(permission));
 
+        // Turn non-whitelisted players away before LOGIN_SUCCESS, with the configured reason.
+        // PlayerLoginEvent is deliberately not fired: this is a server rule, not a plugin veto.
+        if (!netherrack.isWhitelisted(username, xuid, uuid)) {
+            SessionDisconnect.disconnect(session, netherrack.getWhitelistMessage());
+            return;
+        }
+
+        // Nukkit checks name bans at the same point in processLogin(), after the whitelist and
+        // before the client is allowed to play, so the stored reason reaches the disconnect screen.
+        BanEntry ban = netherrack.banFor(username, xuid, uuid);
+        if (ban != null) {
+            SessionDisconnect.disconnect(session, netherrack.getBanMessage(ban.reason()));
+            return;
+        }
+
+        // Plugins get the last word before the client is told it can play. A cancelled login is
+        // disconnected here; the player object still exists so onDisconnect() can save it once.
+        PlayerLoginEvent login = EventBridge.playerLogin(netherrack, player);
+        if (login.isCancelled()) {
+            SessionDisconnect.disconnect(session, login.getKickMessage());
+            return;
+        }
+
         PlayStatusPacket loginSuccess = new PlayStatusPacket();
         loginSuccess.setStatus(PlayStatusPacket.Status.LOGIN_SUCCESS);
         session.sendPacket(loginSuccess);
@@ -352,7 +384,8 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
                 session.sendPacket(stack);
             }
             case COMPLETED -> sendStartGame();
-            case REFUSED -> session.disconnect("You must accept the resource packs to play.");
+            case REFUSED -> SessionDisconnect.disconnect(session,
+                    "You must accept the resource packs to play.");
             default -> {
                 // NONE / SEND_PACKS: nothing to do, since we never send any packs to request.
             }
@@ -385,6 +418,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             chunkView.sendWithin(SPAWN_CHUNK_RADIUS);
             chunkViews.add(chunkView);
             sendOwnPlayerState();
+            players.sendWeather(player, world.isRaining(), world.isThundering());
 
             PlayStatusPacket spawn = new PlayStatusPacket();
             spawn.setStatus(PlayStatusPacket.Status.PLAYER_SPAWN);
@@ -431,7 +465,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
         session.sendPacket(player.createAbilities());
         // The commands their client suggests as they type "/": those their level allows.
-        session.sendPacket(AvailableCommands.forLevel(netherrack.getCommandManager(), player.getCommandLevel()));
+        session.sendPacket(AvailableCommands.forPlayer(netherrack.getCommandManager(), netherrack, player));
 
         // Their inventory as they left it, or empty for a new player - and the hotbar slot
         // they had selected.
@@ -457,6 +491,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         players.join(player);
 
         players.broadcastPresence(true, username);
+        EventBridge.playerJoin(netherrack, player);
 
         return PacketSignal.HANDLED;
     }
@@ -617,9 +652,29 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         if (message.startsWith("/")) {
             runCommand(message, null);
         } else {
-            players.broadcastChat(player, message);
+            PlayerChatEvent chat = EventBridge.playerChat(netherrack, player, message);
+            if (!chat.isCancelled()) {
+                players.broadcastChat(player, chat.getMessage());
+            }
         }
 
+        return PacketSignal.HANDLED;
+    }
+
+    /**
+     * The client's answer to a form. A cancel reason or the literal "null" means it was closed;
+     * both are treated the same as Nukkit does so the form's close callback still runs. Unknown
+     * ids are ignored by EventBridge, which keeps late answers from triggering another form.
+     */
+    @Override
+    public PacketSignal handle(ModalFormResponsePacket packet) {
+        if (player == null) {
+            return PacketSignal.HANDLED;
+        }
+        String data = packet.getFormData();
+        boolean closed = packet.getCancelReason().isPresent()
+                || data == null || data.isBlank() || data.trim().equals("null");
+        EventBridge.formResponse(netherrack, player, packet.getFormId(), data, closed);
         return PacketSignal.HANDLED;
     }
 
@@ -641,8 +696,16 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
      */
     private void runCommand(String command, CommandOriginData origin) {
         command = ColorCodes.singleLine(command);
-        Logger.info(username + " issued command: " + command);
         String input = command.startsWith("/") ? command.substring(1) : command;
+        PlayerCommandEvent event = EventBridge.playerCommand(netherrack, player, input);
+        if (event.isCancelled()) {
+            return;
+        }
+        input = event.getCommand();
+        if (input.startsWith("/")) {
+            input = input.substring(1);
+        }
+        Logger.info(username + " issued command: " + input);
         netherrack.getCommandManager().dispatch(netherrack, new PlayerCommandSender(player, origin), input);
     }
 
@@ -947,6 +1010,46 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
     }
 
     /**
+     * A middle-click on a block. The client asks for the item rather than taking one itself:
+     * survival players must already have it, while creative players are given one. The picked
+     * item keeps the clicked block's state, and the client is told both the new inventory and
+     * the slot it should select.
+     */
+    @Override
+    public PacketSignal handle(BlockPickRequestPacket packet) {
+        if (!spawned || player == null || player.isDead() || player.isSpectator()) {
+            return PacketSignal.HANDLED;
+        }
+        Vector3i position = packet.getBlockPosition();
+        if (position == null || !blockInteraction.canReach(player, position)) {
+            return PacketSignal.HANDLED;
+        }
+        Block block = world.getBlock(position.getX(), position.getY(), position.getZ());
+        if (block == null) {
+            return PacketSignal.HANDLED;
+        }
+        ItemData picked = VanillaData.get().pickedItem(block);
+        if (picked.isNull()) {
+            return PacketSignal.HANDLED; // blocks with no item, such as bedrock or water
+        }
+        picked = BlockEntities.dropFor(picked, world.getBlockEntity(position));
+
+        PlayerInventory.PickResult result = player.getInventory()
+                .pick(picked, player.isCreative(), player.getSelectedSlot());
+        if (!result.changed()) {
+            return PacketSignal.HANDLED;
+        }
+        player.setSelectedSlot(result.slot());
+        sendInventory();
+        PlayerHotbarPacket hotbar = new PlayerHotbarPacket();
+        hotbar.setContainerId(ContainerId.INVENTORY);
+        hotbar.setSelectedHotbarSlot(result.slot());
+        hotbar.setSelectHotbarSlot(true);
+        session.sendPacket(hotbar);
+        return PacketSignal.HANDLED;
+    }
+
+    /**
      * The client's answer to the death screen: it's ready to come back. The server finishes
      * vanilla's respawn handshake - a searching packet and then a ready one - and puts the
      * player at the world spawn with full health and hunger.
@@ -1066,11 +1169,13 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         chunkViews.remove(chunkView);
         if (player != null) {
             blockInteraction.stopBreaking();
+            EventBridge.closeForm(netherrack, player);
             // Saved before they leave the player list: stopping the server saves everyone
             // still on it, so whoever is leaving at that moment is saved one way or the other.
             world.savePlayer(player.getUuid(), PlayerData.save(player));
             if (players.leave(player)) {
                 players.broadcastPresence(false, username);
+                EventBridge.playerQuit(netherrack, player);
             }
         }
     }
@@ -1126,15 +1231,15 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         startGame.setDimensionId(0); // overworld
         startGame.setGeneratorId(world.getGeneratorType());
         startGame.setLevelGameType(netherrack.getDefaultGameMode());
-        startGame.setDifficulty(1);
+        startGame.setDifficulty(world.getDifficulty());
         startGame.setDefaultSpawn(world.getSpawn());
         startGame.setAchievementsDisabled(true);
         startGame.setDayCycleStopTime(0);
         startGame.setEduEditionOffers(0);
         startGame.setEduFeaturesEnabled(false);
         startGame.setEducationProductionId("");
-        startGame.setRainLevel(0);
-        startGame.setLightningLevel(0);
+        startGame.setRainLevel(world.isRaining() ? 1.0f : 0.0f);
+        startGame.setLightningLevel(world.isThundering() ? 1.0f : 0.0f);
         startGame.setPlatformLockedContentConfirmed(false);
         startGame.setMultiplayerGame(true);
         startGame.setBroadcastingToLan(true);
@@ -1175,7 +1280,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         startGame.setRewindHistorySize(0);
         startGame.setServerAuthoritativeBlockBreaking(true);
 
-        startGame.setCurrentTick(0);
+        startGame.setCurrentTick(world.getTime());
         startGame.setEnchantmentSeed(0);
         startGame.setBlockPalette(vanillaData.getBlockPalette());
         // The vanilla blocks defined in the vanilla behavior pack rather than built into the

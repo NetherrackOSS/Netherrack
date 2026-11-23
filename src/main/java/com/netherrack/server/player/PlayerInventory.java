@@ -9,6 +9,7 @@ import org.cloudburstmc.protocol.bedrock.data.inventory.FullContainerName;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ItemData;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequest;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.ItemStackRequestSlotData;
+import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.AutoCraftRecipeAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.ConsumeAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.CraftCreativeAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.CraftRecipeAction;
@@ -29,7 +30,9 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -86,6 +89,10 @@ public class PlayerInventory {
     }
 
     private record Recent(int requestId, List<Change> changes) {
+    }
+
+    /** The hotbar slot chosen for a picked item, and whether the inventory or slot changed. */
+    public record PickResult(int slot, boolean changed) {
     }
 
     /** Why a request was refused. Only logged - the client just undoes the request. */
@@ -270,6 +277,70 @@ public class PlayerInventory {
     }
 
     /**
+     * Selects an item for the player the way vanilla selects one picked from the world: a stack
+     * already in the hotbar wins, one in the main inventory is swapped or moved into an empty
+     * hotbar slot, and creative players are given one when they haven't got it. The caller owns
+     * the player's selected slot and sends the changes to the client; this only changes stacks.
+     */
+    public synchronized PickResult pick(ItemData item, boolean creative, int selectedSlot) {
+        if (item == null || item.isNull() || selectedSlot < 0 || selectedSlot >= HOTBAR_SIZE) {
+            return new PickResult(selectedSlot, false);
+        }
+
+        int found = -1;
+        for (int slot = 0; slot < SIZE; slot++) {
+            if (!main[slot].isNull() && sameKind(main[slot], item)) {
+                if (slot < HOTBAR_SIZE) {
+                    return new PickResult(slot, slot != selectedSlot);
+                }
+                found = slot;
+                break;
+            }
+        }
+
+        // An empty hotbar slot is the cleanest place for a stack from deeper in the inventory,
+        // or for a fresh creative item - nothing held has to be moved out of the way.
+        for (int slot = 0; slot < HOTBAR_SIZE; slot++) {
+            if (!main[slot].isNull()) {
+                continue;
+            }
+            if (found >= 0) {
+                main[slot] = main[found];
+                main[found] = ItemData.AIR;
+                return new PickResult(slot, true);
+            }
+            if (creative) {
+                main[slot] = withCount(item, item.getCount(), nextNetId++);
+                return new PickResult(slot, true);
+            }
+        }
+
+        if (found >= 0) {
+            // No empty hotbar slot: exchange the matching stack with whatever is held.
+            ItemData held = main[selectedSlot];
+            main[selectedSlot] = main[found];
+            main[found] = held;
+            return new PickResult(selectedSlot, true);
+        }
+        if (creative) {
+            // Creative picks replace the held item; put what was held back into the main
+            // inventory when there's room, so filling the hotbar doesn't silently lose it.
+            ItemData held = main[selectedSlot];
+            main[selectedSlot] = withCount(item, item.getCount(), nextNetId++);
+            if (!held.isNull()) {
+                for (int slot = HOTBAR_SIZE; slot < SIZE; slot++) {
+                    if (main[slot].isNull()) {
+                        main[slot] = held;
+                        break;
+                    }
+                }
+            }
+            return new PickResult(selectedSlot, true);
+        }
+        return new PickResult(selectedSlot, false);
+    }
+
+    /**
      * Throws some of a main inventory slot out, as pressing Q on the hotbar does - if the
      * slot really holds at least that many of the item the client says it does.
      */
@@ -359,8 +430,13 @@ public class PlayerInventory {
         List<ItemStackRequestSlotData> touched = new ArrayList<>();
         List<ItemData> consumedNow = new ArrayList<>();
         try {
+            boolean autoCraft = false;
             for (ItemStackRequestAction action : request.getActions()) {
-                apply(action, request.getActions(), requestId, creative, changes, touched, consumedNow);            }
+                autoCraft |= action instanceof AutoCraftRecipeAction;
+            }
+            for (ItemStackRequestAction action : request.getActions()) {
+                apply(action, request.getActions(), requestId, creative, autoCraft, changes, touched, consumedNow);
+            }
             checkArmor();
         } catch (Refused refused) {
             before.restore();
@@ -465,6 +541,40 @@ public class PlayerInventory {
         for (ItemData item : contents.table()) {
             returnToMain(item);
         }
+    }
+
+    /**
+     * Empties everything the player carries, including their armor, offhand and whatever is on
+     * the cursor or in a crafting grid. Old stack ids are forgotten too: a request the client had
+     * already sent can't use one to bring a cleared stack back. The caller sends the whole
+     * inventory afresh. Returns how many individual items were removed.
+     */
+    public synchronized int clear() {
+        int removed = count(main) + count(armor) + count(crafting) + count(table)
+                + count(offhand) + count(cursor);
+        Arrays.fill(main, ItemData.AIR);
+        Arrays.fill(armor, ItemData.AIR);
+        Arrays.fill(crafting, ItemData.AIR);
+        Arrays.fill(table, ItemData.AIR);
+        offhand = ItemData.AIR;
+        cursor = ItemData.AIR;
+        created = ItemData.AIR;
+        recent.clear();
+        return removed;
+    }
+
+    /** How many items are in these slots, counting a stack by its size. */
+    private static int count(ItemData[] slots) {
+        int total = 0;
+        for (ItemData item : slots) {
+            total += count(item);
+        }
+        return total;
+    }
+
+    /** How many items a slot holds. */
+    private static int count(ItemData item) {
+        return item.isNull() ? 0 : item.getCount();
     }
 
     /** A saved item with a network id of its own, as every stack in the inventory has. */
@@ -579,8 +689,8 @@ public class PlayerInventory {
     }
 
     private void apply(ItemStackRequestAction action, ItemStackRequestAction[] allActions, int requestId,
-                       boolean creative, List<Change> changes, List<ItemStackRequestSlotData> touched,
-                       List<ItemData> consumedNow) throws Refused {
+                       boolean creative, boolean autoCraft, List<Change> changes,
+                       List<ItemStackRequestSlotData> touched, List<ItemData> consumedNow) throws Refused {
         if (action instanceof TransferItemStackRequestAction transfer) {
             // Take and Place: moving some or all of a stack, onto nothing or onto the same item.
             transfer(transfer.getCount(), transfer.getSource(), transfer.getDestination(), requestId, changes);
@@ -622,6 +732,40 @@ public class PlayerInventory {
             }
             // Until it lands in a real slot, the client names this stack by the request's id.
             created = withCount(recipe.result(), recipe.result().getCount(), requestId);
+        } else if (action instanceof AutoCraftRecipeAction auto) {
+            for (ItemStackRequestAction candidate : allActions) {
+                if (candidate != action && candidate instanceof AutoCraftRecipeAction) {
+                    throw new Refused("more than one auto-craft in a single request");
+                }
+            }
+            Recipes.Recipe recipe = Recipes.get().byNetId(auto.getRecipeNetworkId());
+            if (recipe == null) {
+                throw new Refused("no recipe with network id " + auto.getRecipeNetworkId());
+            }
+            int crafts = autoCraftCount(auto);
+            if (crafts < 1) {
+                throw new Refused("an auto-craft must make at least one thing");
+            }
+            // The recipe book empties the grid before shift-clicking: its ingredients come
+            // straight from the inventory, so anything already laid out would be a different craft.
+            ItemData[] grid = tableOpen ? table : crafting;
+            for (ItemData item : grid) {
+                if (!item.isNull()) {
+                    throw new Refused("clear the crafting grid before auto-crafting");
+                }
+            }
+            List<ItemData> ingredients = autoCraftIngredients(allActions);
+            if (!recipe.matches(ingredients, crafts)) {
+                throw new Refused("the consumed items don't cover " + crafts + " of " + recipe.id());
+            }
+            int resultCount = recipe.result().getCount();
+            long output = (long) resultCount * crafts;
+            if (resultCount < 1 || output > maxStack(recipe.result())) {
+                throw new Refused("an auto-craft can't make " + output + " of " + recipe.id() + " at once");
+            }
+            // As with a manual craft, the whole batch waits in the virtual output for the
+            // request's Take actions to distribute it into real slots.
+            created = withCount(recipe.result(), (int) output, requestId);
         } else if (action instanceof DestroyAction destroy) {
             if (!creative) {
                 throw new Refused("only creative players can destroy items");
@@ -647,7 +791,9 @@ public class PlayerInventory {
         } else if (action instanceof ConsumeAction consume) {
             Place from = resolve(consume.getSource());
             ItemData item = get(from);
-            if (from.kind() != Kind.CRAFTING && from.kind() != Kind.TABLE
+            // A shift-click's consumes come from the inventory even when the ingredient is
+            // food, so they must not fall through to the eating path.
+            if (!autoCraft && from.kind() != Kind.CRAFTING && from.kind() != Kind.TABLE
                     && (item.isNull() || Foods.of(item) != null)) {
                 // Eating food: the client's consume request and the server's tick race to
                 // finish the meal, and only one of them may take the item out. The client's
@@ -713,6 +859,47 @@ public class PlayerInventory {
             throw new Refused("nothing in the grid to craft from");
         }
         return grid;
+    }
+
+    /** The craft count on a shift-click request; current clients duplicate it in both fields. */
+    private static int autoCraftCount(AutoCraftRecipeAction auto) {
+        int crafts = auto.getTimesCrafted();
+        return crafts > 0 ? crafts : auto.getNumberOfRequestedCrafts();
+    }
+
+    /**
+     * The stacks a shift-click says it's using up. The consumes themselves are applied in
+     * order later, but the recipe has to be checked while the ingredients are still in their
+     * slots. Counts are capped by what each slot really holds, so one stack can feed several
+     * consume actions.
+     */
+    private List<ItemData> autoCraftIngredients(ItemStackRequestAction[] actions) throws Refused {
+        Map<Place, ItemData> sources = new HashMap<>();
+        Map<Place, Integer> remaining = new HashMap<>();
+        List<ItemData> ingredients = new ArrayList<>();
+        for (ItemStackRequestAction action : actions) {
+            if (!(action instanceof ConsumeAction consume)) {
+                continue;
+            }
+            Place place = resolve(consume.getSource());
+            if (place.kind() != Kind.MAIN) {
+                throw new Refused("auto-craft ingredients must come from the inventory");
+            }
+            if (consume.getCount() < 1) {
+                throw new Refused("an auto-craft can't consume nothing");
+            }
+            ItemData item = sources.computeIfAbsent(place, ignored -> get(place));
+            int available = remaining.getOrDefault(place, item.isNull() ? 0 : item.getCount());
+            if (item.isNull() || consume.getCount() > available) {
+                throw new Refused("can't consume " + consume.getCount() + " from a stack of " + available);
+            }
+            remaining.put(place, available - consume.getCount());
+            ingredients.add(item.toBuilder().count(consume.getCount()).build());
+        }
+        if (ingredients.isEmpty()) {
+            throw new Refused("an auto-craft has no ingredients");
+        }
+        return ingredients;
     }
 
     private void transfer(int count, ItemStackRequestSlotData source, ItemStackRequestSlotData destination,
@@ -936,10 +1123,19 @@ public class PlayerInventory {
 
     /** Whether two stacks are the same item and could join up. */
     private static boolean sameItem(ItemData a, ItemData b) {
-        return a.getDefinition().getRuntimeId() == b.getDefinition().getRuntimeId()
+        return sameKind(a, b) && blockId(a) == blockId(b);
+    }
+
+    /**
+     * Whether two stacks are the same kind of item, ignoring the block state a picked item
+     * carries: middle-clicking stairs facing another way should still select the stairs already
+     * in the hotbar.
+     */
+    private static boolean sameKind(ItemData a, ItemData b) {
+        return a.getDefinition() != null && b.getDefinition() != null
+                && a.getDefinition().getRuntimeId() == b.getDefinition().getRuntimeId()
                 && a.getDamage() == b.getDamage()
-                && Objects.equals(a.getTag(), b.getTag())
-                && blockId(a) == blockId(b);
+                && Objects.equals(a.getTag(), b.getTag());
     }
 
     private static int maxStack(ItemData item) {

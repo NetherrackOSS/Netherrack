@@ -28,7 +28,9 @@ import org.cloudburstmc.protocol.bedrock.packet.MobEquipmentPacket;
 import org.cloudburstmc.protocol.bedrock.packet.MovePlayerPacket;
 import org.cloudburstmc.protocol.bedrock.packet.PlayerListPacket;
 import org.cloudburstmc.protocol.bedrock.packet.RemoveEntityPacket;
+import org.cloudburstmc.protocol.bedrock.packet.SetDifficultyPacket;
 import org.cloudburstmc.protocol.bedrock.packet.SetEntityDataPacket;
+import org.cloudburstmc.protocol.bedrock.packet.SetTimePacket;
 import org.cloudburstmc.protocol.bedrock.packet.TextPacket;
 import org.cloudburstmc.protocol.bedrock.packet.UpdateBlockPacket;
 
@@ -217,7 +219,16 @@ public class PlayerManager {
      * follows them, and everyone who can see them is told where they went.
      */
     public void teleport(Player player, Vector3f position) {
-        player.setLocation(position, player.getRotation());
+        teleport(player, position, player.getRotation());
+    }
+
+    /**
+     * As {@link #teleport(Player, Vector3f)}, but also turns the player to face the given
+     * direction. Plugins supply both when teleporting because an API Location carries yaw and
+     * pitch along with the position.
+     */
+    public void teleport(Player player, Vector3f position, Vector3f rotation) {
+        player.setLocation(position, rotation);
         ChunkView view = player.getChunkView();
         if (view != null) {
             view.moveTo(position);
@@ -229,7 +240,7 @@ public class PlayerManager {
         MovePlayerPacket move = new MovePlayerPacket();
         move.setRuntimeEntityId(player.getEntityId());
         move.setPosition(position);
-        move.setRotation(player.getRotation());
+        move.setRotation(rotation);
         move.setMode(MovePlayerPacket.Mode.TELEPORT);
         move.setTeleportationCause(MovePlayerPacket.TeleportationCause.COMMAND);
         move.setOnGround(true);
@@ -412,6 +423,42 @@ public class PlayerManager {
         for (Player player : players.values()) {
             player.getSession().sendPacket(packet);
         }
+    }
+
+    public void sendTime(Player player, int time) {
+        SetTimePacket packet = new SetTimePacket();
+        packet.setTime(time);
+        player.getSession().sendPacket(packet);
+    }
+
+    public void broadcastTime(int time) {
+        SetTimePacket packet = new SetTimePacket();
+        packet.setTime(time);
+        sendToAll(packet);
+    }
+
+    public void sendWeather(Player player, boolean raining, boolean thundering) {
+        player.getSession().sendPacket(levelEvent(raining ? LevelEvent.START_RAINING : LevelEvent.STOP_RAINING,
+                player.getPosition(), 65535));
+        player.getSession().sendPacket(levelEvent(thundering ? LevelEvent.START_THUNDERSTORM : LevelEvent.STOP_THUNDERSTORM,
+                player.getPosition(), 65535));
+    }
+
+    public void broadcastWeather(boolean raining, boolean thundering) {
+        sendToAll(levelEvent(raining ? LevelEvent.START_RAINING : LevelEvent.STOP_RAINING, Vector3f.ZERO, 65535));
+        sendToAll(levelEvent(thundering ? LevelEvent.START_THUNDERSTORM : LevelEvent.STOP_THUNDERSTORM, Vector3f.ZERO, 65535));
+    }
+
+    public void sendDifficulty(Player player, int difficulty) {
+        SetDifficultyPacket packet = new SetDifficultyPacket();
+        packet.setDifficulty(difficulty);
+        player.getSession().sendPacket(packet);
+    }
+
+    public void broadcastDifficulty(int difficulty) {
+        SetDifficultyPacket packet = new SetDifficultyPacket();
+        packet.setDifficulty(difficulty);
+        sendToAll(packet);
     }
 
     /** Sends something about how a player looks or moves to those whose clients are showing them. */

@@ -8,6 +8,7 @@ import org.cloudburstmc.nbt.NbtMap;
 import org.cloudburstmc.nbt.NbtMapBuilder;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -25,6 +26,7 @@ public class World {
     private final String name;
     private final WorldGenerator generator;
     private final WorldStorage storage;
+    private final Path levelDatFile;
     private final int spawnX;
     private final Integer spawnY;
     private final int spawnZ;
@@ -34,15 +36,22 @@ public class World {
     // so two players can ask for (and load) chunks at the same time.
     private final Map<Long, Chunk> chunks = new ConcurrentHashMap<>();
     private volatile boolean closed;
+    private volatile int time;
+    private volatile boolean raining;
+    private volatile boolean thundering;
+    private volatile int difficulty;
+    private volatile boolean levelDatDirty;
 
     /**
-     * @param storage where the world's chunks are saved, or null to keep them in memory only
-     * @param level   the world's level.dat, for its spawn point, terrain type and seed
+     * @param storage    where the world's chunks are saved, or null to keep them in memory only
+     * @param levelDatFile where the world's level.dat lives, or null when it should not be rewritten
+     * @param level      the world's level.dat, for its spawn point, terrain type, seed and state
      */
-    public World(String name, WorldGenerator generator, WorldStorage storage, NbtMap level) {
+    public World(String name, WorldGenerator generator, WorldStorage storage, Path levelDatFile, NbtMap level) {
         this.name = name;
         this.generator = generator;
         this.storage = storage;
+        this.levelDatFile = levelDatFile;
         this.spawnX = level.getInt("SpawnX", 0);
         this.spawnZ = level.getInt("SpawnZ", 0);
         // Vanilla saves 32767 until it has worked out where the ground is.
@@ -50,6 +59,13 @@ public class World {
         this.spawnY = savedSpawnY >= Chunk.MIN_Y && savedSpawnY <= Chunk.MAX_Y ? savedSpawnY : null;
         this.generatorType = level.getInt("Generator", 2);
         this.seed = level.getLong("RandomSeed", 0L);
+        this.time = normalizeTime(level.getLong("Time", 0L));
+        this.raining = level.getByte("rainLevel", (byte) 0) != 0 || level.getBoolean("raining", false);
+        this.thundering = level.getByte("lightningLevel", (byte) 0) != 0 || level.getBoolean("thundering", false);
+        this.difficulty = clampDifficulty(level.getInt("Difficulty", 1));
+        // Legacy worlds don't carry the time/weather keys Netherrack now persists.
+        this.levelDatDirty = !level.containsKey("Time") || !level.containsKey("Difficulty")
+                || (!level.containsKey("rainLevel") && !level.containsKey("raining"));
     }
 
     /** The world's name, as players see it. */
@@ -68,6 +84,58 @@ public class World {
 
     public long getSeed() {
         return seed;
+    }
+
+    /** The world time in ticks, in the 0-23999 day cycle range. */
+    public int getTime() {
+        return time;
+    }
+
+    public void setTime(int time) {
+        int normalized = normalizeTime(time);
+        if (this.time == normalized) {
+            return;
+        }
+        this.time = normalized;
+        this.levelDatDirty = true;
+    }
+
+    public boolean isRaining() {
+        return raining;
+    }
+
+    public void setRaining(boolean raining) {
+        if (this.raining == raining) {
+            return;
+        }
+        this.raining = raining;
+        this.levelDatDirty = true;
+    }
+
+    public boolean isThundering() {
+        return thundering;
+    }
+
+    public void setThundering(boolean thundering) {
+        if (this.thundering == thundering) {
+            return;
+        }
+        this.thundering = thundering;
+        this.levelDatDirty = true;
+    }
+
+    /** 0 peaceful, 1 easy, 2 normal, 3 hard. */
+    public int getDifficulty() {
+        return difficulty;
+    }
+
+    public void setDifficulty(int difficulty) {
+        int clamped = clampDifficulty(difficulty);
+        if (this.difficulty == clamped) {
+            return;
+        }
+        this.difficulty = clamped;
+        this.levelDatDirty = true;
     }
 
     public int getSpawnX() {
@@ -231,6 +299,28 @@ public class World {
         }
     }
 
+    /** Writes the level.dat fields Netherrack owns when they changed. */
+    public synchronized void saveLevelDat() {
+        if (levelDatFile == null || closed || !levelDatDirty) {
+            return;
+        }
+        try {
+            NbtMap level = LevelDat.read(levelDatFile);
+            NbtMap updated = level.toBuilder()
+                    .putLong("Time", (long) time)
+                    .putInt("Difficulty", difficulty)
+                    .putFloat("rainLevel", raining ? 1.0f : 0.0f)
+                    .putInt("rainTime", raining ? 12000 : 0)
+                    .putFloat("lightningLevel", thundering ? 1.0f : 0.0f)
+                    .putInt("lightningTime", thundering ? 12000 : 0)
+                    .build();
+            LevelDat.write(levelDatFile, updated);
+            levelDatDirty = false;
+        } catch (IOException e) {
+            Logger.error("Could not save level.dat for \"" + name + "\": " + e.getMessage());
+        }
+    }
+
     private Chunk loadOrGenerate(int chunkX, int chunkZ) {
         boolean saveable = storage != null && !closed;
         if (saveable) {
@@ -252,6 +342,15 @@ public class World {
             chunk.markReadOnly();
         }
         return chunk;
+    }
+
+    private static int normalizeTime(long time) {
+        int normalized = (int) (time % 24000L);
+        return normalized < 0 ? normalized + 24000 : normalized;
+    }
+
+    private static int clampDifficulty(int difficulty) {
+        return Math.max(0, Math.min(3, difficulty));
     }
 
     /** A chunk's coordinates as one number, as the world keys its chunks by. */

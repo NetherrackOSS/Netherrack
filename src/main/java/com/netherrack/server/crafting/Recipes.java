@@ -572,6 +572,55 @@ public final class Recipes {
     }
 
     /**
+     * Whether the stacks a request consumed cover exactly {@code crafts} sets of this
+     * recipe's ingredients. Shift-clicking sends consumes from the inventory rather than
+     * from a laid-out grid, so the server checks them against its own idea of the recipe
+     * instead of trusting the ingredient list the client included in the request.
+     */
+    private static boolean consumeMatches(List<Ingredient> expected, List<ItemData> consumed, int crafts) {
+        if (crafts < 1 || expected.isEmpty() || consumed == null) {
+            return false;
+        }
+        List<ItemData> left = usable(consumed);
+        for (Ingredient ingredient : expected) {
+            if (take(left, crafts, ingredient::matches) > 0) {
+                return false;
+            }
+        }
+        return left.isEmpty();
+    }
+
+    private static List<ItemData> usable(List<ItemData> consumed) {
+        List<ItemData> left = new ArrayList<>();
+        for (ItemData item : consumed) {
+            if (!item.isNull() && item.getCount() > 0) {
+                left.add(item);
+            }
+        }
+        return left;
+    }
+
+    /** Takes up to {@code needed} matching items, returning what's still needed. */
+    private static int take(List<ItemData> slots, int needed, java.util.function.Predicate<ItemData> matcher) {
+        for (int i = 0; i < slots.size() && needed > 0; ) {
+            ItemData item = slots.get(i);
+            if (!matcher.test(item)) {
+                i++;
+                continue;
+            }
+            int taken = Math.min(needed, item.getCount());
+            needed -= taken;
+            if (taken == item.getCount()) {
+                slots.remove(i);
+            } else {
+                slots.set(i, item.toBuilder().count(item.getCount() - taken).build());
+                i++;
+            }
+        }
+        return needed;
+    }
+
+    /**
      * A recipe: what it's called, its number on the wire, what it makes, and whether a
      * grid's contents are exactly it laid out. The shaped ones match either way round -
      * laid out left-to-right or mirrored, as vanilla accepts both.
@@ -581,11 +630,13 @@ public final class Recipes {
         private final int netId;
         private final String id;
         private final ItemData result;
+        private final List<Ingredient> ingredients;
 
-        Recipe(int netId, String id, ItemData result) {
+        Recipe(int netId, String id, ItemData result, List<Ingredient> ingredients) {
             this.netId = netId;
             this.id = id;
             this.result = result;
+            this.ingredients = List.copyOf(ingredients);
         }
 
         public int netId() {
@@ -603,6 +654,11 @@ public final class Recipes {
 
         /** Whether a crafting grid (4 slots for the 2x2, 9 for the 3x3) holds exactly this recipe. */
         public abstract boolean matches(ItemData[] grid);
+
+        /** Whether stacks taken straight from the inventory cover {@code crafts} of this recipe. */
+        public boolean matches(List<ItemData> consumed, int crafts) {
+            return consumeMatches(ingredients, consumed, crafts);
+        }
     }
 
     /** A shaped recipe: a pattern of ingredients, row by row, with empty cells where the shape has spaces. */
@@ -613,10 +669,20 @@ public final class Recipes {
         private final Ingredient[] cells;
 
         Shaped(int netId, String id, int width, int height, Ingredient[] cells, ItemData result) {
-            super(netId, id, result);
+            super(netId, id, result, ingredientList(cells));
             this.width = width;
             this.height = height;
             this.cells = cells;
+        }
+
+        private static List<Ingredient> ingredientList(Ingredient[] cells) {
+            List<Ingredient> ingredients = new ArrayList<>();
+            for (Ingredient cell : cells) {
+                if (cell != null) {
+                    ingredients.add(cell);
+                }
+            }
+            return ingredients;
         }
 
         @Override
@@ -663,7 +729,7 @@ public final class Recipes {
         private final List<Ingredient> ingredients;
 
         Shapeless(int netId, String id, List<Ingredient> ingredients, ItemData result) {
-            super(netId, id, result);
+            super(netId, id, result, ingredients);
             this.ingredients = ingredients;
         }
 

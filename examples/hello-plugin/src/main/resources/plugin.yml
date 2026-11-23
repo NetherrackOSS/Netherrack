@@ -1,0 +1,22 @@
+name: HelloPlugin
+version: 1.0.0
+api-version: 0.4.0
+main: com.netherrack.example.hello.HelloPlugin
+description: A minimal lifecycle, event, command, form, scheduler and world API example plugin
+author: Netherrack
+load: POSTWORLD
+commands:
+  hello:
+    description: Sends the configured greeting
+    aliases: [hi]
+    usage: /hello [name]
+    permission: hello.use
+  where:
+    description: Shows your position, game mode and the block underfoot
+    aliases: [loc]
+    usage: /where [up|copy]
+    permission: hello.use
+  testform:
+    description: Opens a test form UI
+    usage: /testform
+    permission: hello.use

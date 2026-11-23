@@ -1,5 +1,8 @@
 package com.netherrack.server.network;
 
+import com.netherrack.api.event.block.BlockBreakEvent;
+import com.netherrack.api.event.block.BlockPlaceEvent;
+import com.netherrack.server.Netherrack;
 import com.netherrack.server.block.Block;
 import com.netherrack.server.block.BlockBreaking;
 import com.netherrack.server.block.BlockDrops;
@@ -16,6 +19,7 @@ import com.netherrack.server.player.Permission;
 import com.netherrack.server.player.Player;
 import com.netherrack.server.player.PlayerInventory;
 import com.netherrack.server.player.PlayerManager;
+import com.netherrack.server.plugin.EventBridge;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.util.Scheduler;
 import com.netherrack.server.world.World;
@@ -95,15 +99,18 @@ public class BlockInteraction {
     private final PlayerManager players;
     private final ItemEntities itemEntities;
     private final Scheduler scheduler;
+    private final Netherrack netherrack;
 
     /** The block this player is cracking, or null if they aren't breaking anything. */
     private Vector3i breaking;
 
-    public BlockInteraction(World world, PlayerManager players, ItemEntities itemEntities, Scheduler scheduler) {
+    public BlockInteraction(World world, PlayerManager players, ItemEntities itemEntities, Scheduler scheduler,
+                            Netherrack netherrack) {
         this.world = world;
         this.players = players;
         this.itemEntities = itemEntities;
         this.scheduler = scheduler;
+        this.netherrack = netherrack;
     }
 
     /** The block actions from one PlayerAuthInput: starting, stopping and finishing breaks. */
@@ -225,6 +232,14 @@ public class BlockInteraction {
             } else if (blockedByPlayer(placed)) {
                 refusal = "a player is in the way";
                 placed = List.of();
+            }
+        }
+        if (refusal == null) {
+            BlockPlacement.Placed first = placed.get(0);
+            BlockPlaceEvent place = EventBridge.blockPlace(netherrack, player, first.position(), first.block());
+            if (place.isCancelled()) {
+                undo(player, slot, target, clicked);
+                return true;
             }
         }
         if (refusal != null) {
@@ -458,6 +473,13 @@ public class BlockInteraction {
             return;
         }
 
+        BlockBreakEvent breakEvent = EventBridge.blockBreak(netherrack, player, position, block);
+        if (breakEvent.isCancelled()) {
+            stopBreaking();
+            player.getSession().sendPacket(PlayerManager.blockUpdate(position, block));
+            return;
+        }
+
         stopBreaking();
         BlockBreaking.Changes changes = BlockBreaking.breakBlock(world, position);
         if (player.getSurvival() != null && !player.isCreative()) {
@@ -576,6 +598,11 @@ public class BlockInteraction {
 
     private static boolean withinReach(Player player, Vector3i position) {
         return player.getPosition().distanceSquared(center(position)) <= MAX_REACH * MAX_REACH;
+    }
+
+    /** Whether a player is close enough to a block to act on it, including middle-click picking. */
+    public boolean canReach(Player player, Vector3i position) {
+        return inWorld(position) && withinReach(player, position);
     }
 
     /** Whether a player overlaps the part of a block's space a box takes up. */

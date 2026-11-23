@@ -1,6 +1,7 @@
 package com.netherrack.server;
 
 import com.netherrack.server.setup.Lang;
+import com.netherrack.server.util.LoggingConfig;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.world.FlatPreset;
 
@@ -57,11 +58,88 @@ public class NetherrackConfig {
                                         + " logs/latest.log as well, without showing in the console. Useful when"
                                         + " something goes wrong, but the log grows quickly.",
                                 "Allowed values: true or false"))),
+                new Section("logging", List.of(
+                        new Setting("info-format", LoggingConfig.DEFAULT_INFO_FORMAT, true,
+                                "The INFO line's pattern. {time}, {date}, {millis}, {thread}, {level}, {message},"
+                                        + " {prefix} and {suffix} are filled in; <yellow> inserts a color, <bold> a style"
+                                        + " and <reset> clears both. The log file keeps its own plain shape."),
+                        new Setting("warn-format", LoggingConfig.DEFAULT_WARN_FORMAT, true,
+                                "The WARN line's pattern, with the same placeholders as info-format."),
+                        new Setting("error-format", LoggingConfig.DEFAULT_ERROR_FORMAT, true,
+                                "The ERROR line's pattern, with the same placeholders as info-format."),
+                        new Setting("debug-format", LoggingConfig.DEFAULT_DEBUG_FORMAT, true,
+                                "The DEBUG line's pattern, shown when console-debug below is true."),
+                        new Setting("format", LoggingConfig.DEFAULT_FORMAT, true,
+                                "Fallback pattern for any level that has no pattern of its own above."),
+                        new Setting("prefix", LoggingConfig.DEFAULT_PREFIX, true,
+                                "Text put in {prefix}, before or after it in the patterns above."),
+                        new Setting("suffix", LoggingConfig.DEFAULT_SUFFIX, true,
+                                "Text put in {suffix}, before or after it in the patterns above."),
+                        new Setting("info-prefix", LoggingConfig.DEFAULT_PREFIX, true,
+                                "INFO's {prefix}, falling back to the shared prefix above."),
+                        new Setting("info-suffix", LoggingConfig.DEFAULT_SUFFIX, true,
+                                "INFO's {suffix}, falling back to the shared suffix above."),
+                        new Setting("warn-prefix", LoggingConfig.DEFAULT_PREFIX, true,
+                                "WARN's {prefix}, falling back to the shared prefix above."),
+                        new Setting("warn-suffix", LoggingConfig.DEFAULT_SUFFIX, true,
+                                "WARN's {suffix}, falling back to the shared suffix above."),
+                        new Setting("error-prefix", LoggingConfig.DEFAULT_PREFIX, true,
+                                "ERROR's {prefix}, falling back to the shared prefix above."),
+                        new Setting("error-suffix", LoggingConfig.DEFAULT_SUFFIX, true,
+                                "ERROR's {suffix}, falling back to the shared suffix above."),
+                        new Setting("debug-prefix", LoggingConfig.DEFAULT_PREFIX, true,
+                                "DEBUG's {prefix}, falling back to the shared prefix above."),
+                        new Setting("debug-suffix", LoggingConfig.DEFAULT_SUFFIX, true,
+                                "DEBUG's {suffix}, falling back to the shared suffix above."),
+                        new Setting("time-format", LoggingConfig.DEFAULT_TIME_FORMAT, true,
+                                "How {time} is rendered, as a Java time pattern (for example HH:mm:ss)."),
+                        new Setting("date-format", LoggingConfig.DEFAULT_DATE_FORMAT, true,
+                                "How {date} is rendered, as a Java date pattern (for example yyyy-MM-dd)."),
+                        new Setting("colors", LoggingConfig.DEFAULT_COLOR_MODE, false,
+                                "Whether console colors and message formatting codes are used: auto detects a"
+                                        + " terminal, true always uses them, false never does.",
+                                "Allowed values: auto, true or false"),
+                        new Setting("console-debug", String.valueOf(LoggingConfig.DEFAULT_CONSOLE_DEBUG), false,
+                                "Whether DEBUG lines use debug-format on the console, as well as in the log file.",
+                                "Allowed values: true or false"),
+                        new Setting("info-enabled", "true", false,
+                                "Whether INFO lines are shown on the console (they stay in the log file).",
+                                "Allowed values: true or false"),
+                        new Setting("warn-enabled", "true", false,
+                                "Whether WARN lines are shown on the console.",
+                                "Allowed values: true or false"),
+                        new Setting("error-enabled", "true", false,
+                                "Whether ERROR lines are shown on the console.",
+                                "Allowed values: true or false"),
+                        new Setting("debug-enabled", "true", false,
+                                "Whether DEBUG lines are shown on the console when console-debug is true.",
+                                "Allowed values: true or false"))),
+                new Section("labels", List.of(
+                        new Setting("timestamp-color", LoggingConfig.DEFAULT_TIMESTAMP_COLOR, true,
+                                "The color name for {time}, or null for none.",
+                                "Allowed names: " + LoggingConfig.COLOR_NAMES),
+                        new Setting("thread-color", LoggingConfig.DEFAULT_THREAD_COLOR, true,
+                                "The color name for {thread}, or null for none."),
+                        new Setting("info-color", LoggingConfig.DEFAULT_INFO_COLOR, true,
+                                "The color name for the INFO label, or null for none."),
+                        new Setting("warn-color", LoggingConfig.DEFAULT_WARN_COLOR, true,
+                                "The color name for the WARN label, or null for none."),
+                        new Setting("error-color", LoggingConfig.DEFAULT_ERROR_COLOR, true,
+                                "The color name for the ERROR label, or null for none."),
+                        new Setting("debug-color", String.valueOf(LoggingConfig.DEFAULT_DEBUG_COLOR), false,
+                                "The color name for the DEBUG label, or null for none."),
+                        new Setting("bracket-color", String.valueOf(LoggingConfig.DEFAULT_BRACKET_COLOR), false,
+                                "The color name for brackets around placeholders in the format, or null for none.",
+                                "Color names: " + LoggingConfig.COLOR_NAMES,
+                                "Style names: " + LoggingConfig.STYLE_NAMES))),
                 new Section("messages", List.of(
                         new Setting("server-shutdown", "Server closed", true,
                                 "What the players still on the server are shown when it closes."),
                         new Setting("server-whitelist", "You are not whitelisted on this server!", true,
-                                "What a player who isn't on the whitelist is shown as they're turned away."))),
+                                "What a player who isn't on the whitelist is shown as they're turned away."),
+                        new Setting("server-ban", "You are banned!", true,
+                                "What a banned player is shown as they're turned away. The stored reason, if"
+                                        + " any, is appended after \"Reason:\"."))),
                 new Section("level", List.of(
                         new Setting("preset-type", preset, true,
                                 "Which of the game's flat world presets a new flat level is made from, which sets"
@@ -112,6 +190,24 @@ public class NetherrackConfig {
         }
     }
 
+    /**
+     * Reads the file without writing defaults or logging anything, so logging can be set up
+     * before the first line is printed. A missing or unreadable file simply has no settings;
+     * {@link #load(ServerConfig)} reports those problems once logging is available.
+     */
+    public static Map<String, String> readQuietly(Path path) {
+        Map<String, String> values = new HashMap<>();
+        if (!Files.exists(path)) {
+            return values;
+        }
+        try {
+            readInto(Files.readAllLines(path, StandardCharsets.UTF_8), values, null);
+        } catch (IOException ignored) {
+            // The normal load reports this once the console logger has been configured.
+        }
+        return values;
+    }
+
     /** A setting's value, like "messages.server-shutdown", or its default if the file doesn't set it. */
     public String getString(String key) {
         return values.getOrDefault(key, fallbacks.get(key));
@@ -158,6 +254,10 @@ public class NetherrackConfig {
      * its key. A line that's neither is warned about and skipped.
      */
     private void read(List<String> lines) {
+        readInto(lines, values, path);
+    }
+
+    private static void readInto(List<String> lines, Map<String, String> values, Path path) {
         Deque<Open> open = new ArrayDeque<>();
         for (int number = 1; number <= lines.size(); number++) {
             String line = withoutComment(lines.get(number - 1));
@@ -171,8 +271,10 @@ public class NetherrackConfig {
             }
             int colon = keyEnd(content);
             if (colon < 0) {
-                Logger.warn(path + " line " + number + " isn't \"key: value\" (is there a space after the colon?),"
-                        + " so it's skipped: " + content);
+                if (path != null) {
+                    Logger.warn(path + " line " + number + " isn't \"key: value\" (is there a space after the"
+                            + " colon?), so it's skipped: " + content);
+                }
                 continue;
             }
             String key = unquoted(content.substring(0, colon).strip());
@@ -225,8 +327,10 @@ public class NetherrackConfig {
     }
 
     /**
-     * A value as written: in double quotes, with \" \\ \n and \t standing for what they
-     * escape; in single quotes, with '' standing for one; or plain, as it is.
+     * A value as written: in double quotes, with backslash escapes for a quote, a backslash,
+     * a line feed, a tab, and a four-digit hex character code; in single quotes, with '' for
+     * one quote; or plain, as it is. The hex codes matter for the label colors, which are
+     * ANSI escape sequences.
      */
     private static String unquoted(String value) {
         if (value.length() >= 2 && value.startsWith("'") && value.endsWith("'")) {
@@ -240,11 +344,24 @@ public class NetherrackConfig {
             char c = value.charAt(i);
             if (c == '\\' && i + 1 < value.length() - 1) {
                 char escaped = value.charAt(++i);
-                text.append(switch (escaped) {
-                    case 'n' -> '\n';
-                    case 't' -> '\t';
-                    default -> escaped;
-                });
+                switch (escaped) {
+                    case 'n' -> text.append('\n');
+                    case 't' -> text.append('\t');
+                    case 'u' -> {
+                        int end = i + 5; // the u plus four hex digits
+                        if (end <= value.length() - 1) {
+                            try {
+                                text.append((char) Integer.parseInt(value.substring(i + 1, end), 16));
+                                i = end - 1;
+                            } catch (NumberFormatException e) {
+                                text.append('u');
+                            }
+                        } else {
+                            text.append('u');
+                        }
+                    }
+                    default -> text.append(escaped);
+                }
             } else {
                 text.append(c);
             }
@@ -253,6 +370,22 @@ public class NetherrackConfig {
     }
 
     private static String quoted(String value) {
-        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+        StringBuilder text = new StringBuilder("\"");
+        for (char c : value.toCharArray()) {
+            switch (c) {
+                case '\\' -> text.append("\\\\");
+                case '"' -> text.append("\\\"");
+                case '\n' -> text.append("\\n");
+                case '\t' -> text.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        text.append(String.format(Locale.ROOT, "\\u%04X", (int) c));
+                    } else {
+                        text.append(c);
+                    }
+                }
+            }
+        }
+        return text.append('"').toString();
     }
 }

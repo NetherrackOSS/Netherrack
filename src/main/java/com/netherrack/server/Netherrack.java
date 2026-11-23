@@ -1,22 +1,36 @@
 package com.netherrack.server;
 
+import com.netherrack.api.plugin.PluginLoadOrder;
 import com.netherrack.server.command.AvailableCommands;
+import com.netherrack.server.command.BanCommand;
+import com.netherrack.server.command.BanListCommand;
+import com.netherrack.server.command.ClearCommand;
 import com.netherrack.server.command.CommandManager;
 import com.netherrack.server.command.ConsoleCommandSender;
 import com.netherrack.server.command.DeopCommand;
+import com.netherrack.server.command.DifficultyCommand;
 import com.netherrack.server.command.GamemodeCommand;
 import com.netherrack.server.command.GiveCommand;
 import com.netherrack.server.command.HelpCommand;
+import com.netherrack.server.command.KickCommand;
 import com.netherrack.server.command.KillCommand;
 import com.netherrack.server.command.OpCommand;
+import com.netherrack.server.command.PardonCommand;
+import com.netherrack.server.command.PluginsCommand;
+import com.netherrack.server.command.ReloadCommand;
 import com.netherrack.server.command.StopCommand;
-import com.netherrack.server.crafting.Recipes;
+import com.netherrack.server.command.TimeCommand;
 import com.netherrack.server.command.TpCommand;
 import com.netherrack.server.command.VersionCommand;
+import com.netherrack.server.command.WeatherCommand;
+import com.netherrack.server.command.WhitelistCommand;
+import com.netherrack.server.crafting.Recipes;
 import com.netherrack.server.entity.ItemEntities;
 import com.netherrack.server.network.ChunkViews;
 import com.netherrack.server.network.NetherNetServer;
 import com.netherrack.server.network.TripwireSensor;
+import com.netherrack.server.player.BanEntry;
+import com.netherrack.server.player.BanList;
 import com.netherrack.server.player.GameModes;
 import com.netherrack.server.player.Permission;
 import com.netherrack.server.player.Permissions;
@@ -24,10 +38,15 @@ import com.netherrack.server.player.Player;
 import com.netherrack.server.player.PlayerData;
 import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.player.PlayerSurvival;
+import com.netherrack.server.player.Whitelist;
+import com.netherrack.server.network.SessionDisconnect;
+import com.netherrack.server.plugin.EventBridge;
+import com.netherrack.server.plugin.PluginManagerImpl;
 import com.netherrack.server.setup.Lang;
 import com.netherrack.server.setup.SetupWizard;
 import com.netherrack.server.util.AnsiSupport;
 import com.netherrack.server.util.Console;
+import com.netherrack.server.util.LoggingConfig;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.util.NettyLogBridge;
 import com.netherrack.server.util.Scheduler;
@@ -40,6 +59,7 @@ import org.jline.reader.UserInterruptException;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -58,12 +78,16 @@ public class Netherrack {
     private final PlayerManager playerManager = new PlayerManager();
     private final WorldManager worldManager;
     private final CommandManager commandManager;
+    private final PluginManagerImpl pluginManager;
     private World world;
     private ItemEntities itemEntities;
     private ChunkViews chunkViews;
     private TripwireSensor tripwires;
     private final Scheduler scheduler = new Scheduler();
+    private Map<String, String> wizardSettings = Map.of();
     private Permissions permissions;
+    private Whitelist whitelist;
+    private BanList bans;
     private ScheduledExecutorService ticker;
     private ScheduledExecutorService autosave;
     private boolean worldClosed;
@@ -81,11 +105,24 @@ public class Netherrack {
         commandManager.register(new VersionCommand());
         commandManager.register(new HelpCommand());
         commandManager.register(new GamemodeCommand());
+        commandManager.register(new DifficultyCommand());
+        commandManager.register(new TimeCommand());
+        commandManager.register(new WeatherCommand());
         commandManager.register(new OpCommand());
         commandManager.register(new DeopCommand());
         commandManager.register(new KillCommand());
+        commandManager.register(new KickCommand());
         commandManager.register(new TpCommand());
         commandManager.register(new GiveCommand());
+        commandManager.register(new ClearCommand());
+        commandManager.register(new ReloadCommand());
+        commandManager.register(new PluginsCommand());
+        commandManager.register(new WhitelistCommand());
+        commandManager.register(new BanCommand());
+        commandManager.register(new PardonCommand());
+        commandManager.register(new BanListCommand());
+
+        this.pluginManager = new PluginManagerImpl(this, Path.of("plugins"));
     }
 
     public ServerConfig getConfig() {
@@ -98,6 +135,62 @@ public class Netherrack {
 
     public Permissions getPermissions() {
         return permissions;
+    }
+
+    public Whitelist getWhitelist() {
+        return whitelist;
+    }
+
+    public BanList getBans() {
+        return bans;
+    }
+
+    /** The matching ban, if this player is banned. Expired entries are discarded as they're read. */
+    public BanEntry banFor(String name, String xuid, String uuid) {
+        return bans == null ? null : bans.matching(name, xuid, uuid);
+    }
+
+    /** Nukkit's ban wording, with the stored reason appended when there is one. */
+    public String getBanMessage(String reason) {
+        String message = settings.getString("messages.server-ban");
+        if (message == null || message.isBlank()) {
+            message = "You are banned!";
+        }
+        return reason == null || reason.isBlank() ? message : message + " Reason: " + reason;
+    }
+
+    /** Whether only whitelisted players and operators may join right now. */
+    public boolean isWhitelistEnabled() {
+        return config.getBoolean("white-list", false);
+    }
+
+    public void setWhitelistEnabled(boolean enabled) {
+        config.setBoolean("white-list", enabled);
+    }
+
+    /** Re-reads whitelist.json, so hand-edited entries take effect with /whitelist reload. */
+    public void reloadWhitelist() {
+        whitelist.reload();
+    }
+
+    /**
+     * Operators always pass, and an empty XUID is fine for offline accounts: the whitelist entry
+     * may be by gamertag or UUID instead.
+     */
+    public boolean isWhitelisted(String name, String xuid, String uuid) {
+        if (!isWhitelistEnabled()) {
+            return true;
+        }
+        if (permissions != null && permissions.of(xuid) == Permission.OPERATOR) {
+            return true;
+        }
+        return whitelist != null && whitelist.contains(name, xuid, uuid);
+    }
+
+    /** The disconnect reason from netherrack.yml, with a safe fallback for older configs. */
+    public String getWhitelistMessage() {
+        String message = settings.getString("messages.server-whitelist");
+        return message == null || message.isBlank() ? "You are not whitelisted on this server!" : message;
     }
 
     /**
@@ -120,7 +213,7 @@ public class Netherrack {
     public void applyPermission(Player player, Permission permission) {
         player.setPermission(permission, commandLevelFor(permission));
         player.sendAbilities();
-        player.getSession().sendPacket(AvailableCommands.forLevel(commandManager, player.getCommandLevel()));
+        player.getSession().sendPacket(AvailableCommands.forPlayer(commandManager, this, player));
     }
 
     public ItemEntities getItemEntities() {
@@ -145,7 +238,20 @@ public class Netherrack {
         return commandManager;
     }
 
+    public PluginManagerImpl getPluginManager() {
+        return pluginManager;
+    }
+
+    /** The loaded world, or null during the early part of startup. */
+    public World getWorld() {
+        return world;
+    }
+
     public static void main(String[] args) {
+        // Read the logging sections first, so even the first line the server prints uses them.
+        // A missing netherrack.yml leaves the built-in defaults in place until the normal
+        // config load writes the file later in startup.
+        Logger.configure(LoggingConfig.from(NetherrackConfig.readQuietly(NetherrackConfig.FILE)));
         NettyLogBridge.install();
         AnsiSupport.init();
         new Netherrack().start();
@@ -161,30 +267,38 @@ public class Netherrack {
         String language = Lang.DEFAULT_CODE;
         if (!Files.exists(Path.of("server.properties"))) {
             Logger.info("First-time setup detected. Launching setup wizard...");
-            String chosen = new SetupWizard().run();
-            if (chosen == null) {
+            SetupWizard.Result setup = new SetupWizard().run();
+            if (setup == null) {
                 Logger.error("Setup wizard did not accept the license. Startup has been cancelled.");
                 System.exit(1);
                 return;
             }
-            language = chosen;
+            language = setup.language();
+            wizardSettings = setup.settings();
         }
 
         // Set before config.load() too, so messages like "server.properties not found"
         // (logged from inside that call, on a first run) are already in the right language.
         Lang.current = new Lang(language);
 
-        config.load(language);
+        config.load(language, wizardSettings);
         Lang.current = new Lang(config.get("language", language));
         Lang lang = Lang.current;
         settings.load(config);
 
         permissions = Permissions.load(Permissions.FILE, defaultPermission());
+        whitelist = Whitelist.load(Whitelist.FILE);
+        bans = BanList.load(BanList.FILE);
 
         NettyLogBridge.setDebug(settings.getBoolean("logs.debug"));
         if (NettyLogBridge.isDebug()) {
             Logger.warn(lang.get("server.debug_enabled"));
         }
+
+        // STARTUP plugins get their callbacks here, before the world and listener exist. Their
+        // jars are read once; the POSTWORLD callbacks come after those are ready below.
+        pluginManager.discover();
+        pluginManager.callOnLoad(PluginLoadOrder.STARTUP);
 
         String ip = config.get("server-ip", "0.0.0.0");
         int port = config.getInt("server-port", 19132);
@@ -216,6 +330,11 @@ public class Netherrack {
         tripwires = new TripwireSensor(world, playerManager);
         startTicking();
         netherNetServer.start(world, playerManager, this);
+        // Signaling is bound now, so report the build from here on - the same details /version
+        // gives, followed by the license the server is distributed under.
+        Logger.info("This server is running Netherrack v" + VERSION + " (git commit: "
+                + VersionInfo.GIT_COMMIT + ")");
+        Logger.info("Netherrack is distributed under the GPL License");
 
         sleep(150);
         Logger.info(lang.get("server.early_build"));
@@ -226,6 +345,11 @@ public class Netherrack {
         sleep(300);
         Logger.info(lang.get("server.thread_running"));
         Logger.info(lang.get("server.done", maxPlayers));
+
+        pluginManager.callOnLoad(PluginLoadOrder.POSTWORLD);
+        pluginManager.enableAll();
+        // Fired after onEnable() so listeners registered there hear the server is ready.
+        EventBridge.serverStart(this);
 
         runConsoleLoop();
     }
@@ -268,16 +392,17 @@ public class Netherrack {
         if (!stopping.compareAndSet(false, true)) {
             return;
         }
-        Thread thread = new Thread(this::stopServer, "Server shutdown");
+        Thread thread = new Thread(this::stopServer, "main");
         thread.start();
     }
 
     private void stopServer() {
         Logger.info(Lang.current.get("server.stopping"));
+        EventBridge.serverStop(this);
         // Players see why they were let go, rather than losing the connection.
         String message = settings.getString("messages.server-shutdown");
         for (Player player : List.copyOf(playerManager.getPlayers())) {
-            player.getSession().disconnect(message);
+            SessionDisconnect.disconnect(player.getSession(), message);
         }
         sleep(200);
         try {
@@ -285,6 +410,7 @@ public class Netherrack {
         } catch (RuntimeException e) {
             Logger.error("Error closing the network listener: " + e);
         }
+        pluginManager.disableAll();
         ticker.shutdownNow();
         closeWorld();
         Logger.info(Lang.current.get("server.closed"));
@@ -306,6 +432,7 @@ public class Netherrack {
         }
         Logger.info(Lang.current.get("server.saving_level", config.get("level-name", "Bedrock level")));
         savePlayers();
+        world.saveLevelDat();
         world.close();
     }
 
@@ -327,6 +454,7 @@ public class Netherrack {
             try {
                 savePlayers();
                 int saved = world.save();
+                world.saveLevelDat();
                 if (saved > 0) {
                     Logger.debug("Autosave wrote " + saved + " chunks.");
                 }
@@ -345,6 +473,42 @@ public class Netherrack {
             return GameType.SURVIVAL;
         }
         return gameMode;
+    }
+
+    /** The world's difficulty: 0 peaceful, 1 easy, 2 normal, 3 hard. */
+    public int getDifficulty() {
+        return world != null ? world.getDifficulty() : parseDifficulty(config.get("difficulty", "normal"));
+    }
+
+    public void setDifficulty(int difficulty) {
+        int clamped = Math.max(0, Math.min(3, difficulty));
+        config.set("difficulty", difficultyName(clamped));
+        if (world != null) {
+            world.setDifficulty(clamped);
+        }
+    }
+
+    public static int parseDifficulty(String value) {
+        if (value == null) {
+            return 2;
+        }
+        return switch (value.trim().toLowerCase(java.util.Locale.ROOT)) {
+            case "peaceful", "p", "0" -> 0;
+            case "easy", "e", "1" -> 1;
+            case "normal", "n", "2" -> 2;
+            case "hard", "h", "3" -> 3;
+            default -> 2;
+        };
+    }
+
+    public static String difficultyName(int difficulty) {
+        return switch (difficulty) {
+            case 0 -> "peaceful";
+            case 1 -> "easy";
+            case 2 -> "normal";
+            case 3 -> "hard";
+            default -> "normal";
+        };
     }
 
     /** default-player-permission-level from server.properties: what players without a permissions.json entry get. */

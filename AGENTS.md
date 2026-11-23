@@ -6,6 +6,8 @@ Guidance for AI coding agents working in this repository.
 
 Netherrack is an experimental vibe coded Minecraft: Bedrock Edition server software project
 focused on learning, experimentation, and building a server implementation from the ground up.
+It is deliberately Nukkit-like in gameplay and console feel: PocketMine/PNX-style logs and
+Cloudburst Nukkit's behavior are often the closest reference when a mechanic needs a model.
 
 - Language: Java 17
 - Build: Maven (shaded fat JAR, `finalName` = `netherrack`)
@@ -27,8 +29,9 @@ bash mvnw clean compile
 ```
 
 - Use `bash mvnw ...` — the wrapper script is not executable on Linux.
-- There is currently no automated test suite in the repo. Verify changes by starting the
-  server and connecting with a Bedrock Edition client (default port `19132`).
+- There is no Maven test suite in the repo. Verify changes by compiling/packaging, and for larger
+  gameplay or protocol changes start the server and connect with a Bedrock Edition client
+  (default port `19132`).
 - Run the server with the JVM flags `start.sh` uses: java may need
   `--sun-misc-unsafe-memory-access=allow --enable-native-access=ALL-UNNAMED` for the
   NetherNet native transport.
@@ -40,7 +43,7 @@ bash mvnw clean compile
   when piping commands to the console.
 - `server.properties` keys include: `server-port`, `server-ip`, `level-name`, `level-type`
   (`default` = generated terrain, the default; `flat` = flat presets, which must keep working),
-  `gamemode`, `difficulty`, `max-players`, `view-distance`.
+  `gamemode`, `difficulty`, `max-players`, `view-distance`, `white-list`.
 - `netherrack.yml` holds Netherrack's own settings, including `level.preset-type` (which flat
   preset new flat levels use) and `messages.*`.
 - Worlds live in `worlds/<level-name>/`: `level.dat` (see `LevelDat`), `levelname.txt`, `db/`.

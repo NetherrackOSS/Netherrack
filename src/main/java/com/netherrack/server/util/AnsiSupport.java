@@ -27,6 +27,20 @@ public final class AnsiSupport {
         return terminal;
     }
 
+    /**
+     * Whether output is going to a terminal that can show ANSI colors. JLine builds a "dumb"
+     * terminal when standard output is redirected, so a piped log gets no escape codes; before
+     * init runs, the Java console check is the best signal available.
+     */
+    public static boolean supportsColors() {
+        Terminal current = terminal;
+        if (current != null) {
+            String type = current.getType();
+            return type != null && !type.equalsIgnoreCase("dumb");
+        }
+        return System.console() != null;
+    }
+
     public static void init() {
         try {
             terminal = TerminalBuilder.builder()
