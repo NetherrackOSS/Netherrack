@@ -1,4 +1,4 @@
-# v0.4.0-beta (unreleased)
+# v0.4.0-beta
 
 ### Added
 - **Custom form UI API:** plugins can open a Bedrock `SimpleForm` with a title, message and buttons
