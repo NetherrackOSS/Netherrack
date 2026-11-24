@@ -279,21 +279,26 @@ public class PlayerManager {
 
     /**
      * Tells every player in the world, in yellow as vanilla does, that someone joined or left,
-     * and the console. Players see vanilla's own translation key, so each client shows it in
-     * its own language.
+     * and the console. Players get the message in their own language when Netherrack has it.
      */
     public void broadcastPresence(boolean joined, String username) {
-        // The console gets it in yellow too, worded by Netherrack's own lang file.
-        Logger.info(ColorCodes.PREFIX + "e" + Lang.current.get(joined ? "player.joined" : "player.left", username));
+        String key = joined ? "player.joined" : "player.left";
+        Logger.info(ColorCodes.PREFIX + "e" + Lang.current.get(key, username));
 
-        TextPacket text = new TextPacket();
-        text.setType(TextPacket.Type.TRANSLATION);
-        text.setSourceName("");
-        text.setXuid("");
-        text.setNeedsTranslation(true);
-        text.setMessage("\u00a7e%multiplayer.player." + (joined ? "joined" : "left"));
-        text.getParameters().add(username);
+        String vanillaKey = "\u00a7e%multiplayer.player." + (joined ? "joined" : "left");
         for (Player player : players.values()) {
+            Lang lang = Lang.of(player.getLanguageCode());
+            if (!Lang.DEFAULT_CODE.equals(lang.getCode()) && !lang.get(key).equals(key)) {
+                player.sendText("\u00a7e" + lang.get(key, username));
+                continue;
+            }
+            TextPacket text = new TextPacket();
+            text.setType(TextPacket.Type.TRANSLATION);
+            text.setSourceName("");
+            text.setXuid("");
+            text.setNeedsTranslation(true);
+            text.setMessage(vanillaKey);
+            text.getParameters().add(username);
             player.getSession().sendPacket(text);
         }
     }

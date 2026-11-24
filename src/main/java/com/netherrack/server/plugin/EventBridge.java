@@ -3,12 +3,15 @@ package com.netherrack.server.plugin;
 import com.netherrack.api.event.Event;
 import com.netherrack.api.event.block.BlockBreakEvent;
 import com.netherrack.api.event.block.BlockPlaceEvent;
+import com.netherrack.api.event.player.PlayerActionBarEvent;
 import com.netherrack.api.event.player.PlayerChatEvent;
 import com.netherrack.api.event.player.PlayerCommandEvent;
 import com.netherrack.api.event.player.PlayerFormRespondedEvent;
 import com.netherrack.api.event.player.PlayerJoinEvent;
 import com.netherrack.api.event.player.PlayerLoginEvent;
+import com.netherrack.api.event.player.PlayerPopupEvent;
 import com.netherrack.api.event.player.PlayerQuitEvent;
+import com.netherrack.api.event.player.PlayerToastEvent;
 import com.netherrack.api.event.server.ServerStartEvent;
 import com.netherrack.api.event.server.ServerStopEvent;
 import com.netherrack.api.form.Form;
@@ -64,6 +67,35 @@ public final class EventBridge {
                                                    com.netherrack.server.player.Player player,
                                                    String command) {
         PlayerCommandEvent event = new PlayerCommandEvent(apiPlayer(server, player), command);
+        call(server, event);
+        return event;
+    }
+
+    /** Announces an action bar send and returns the message listeners want the client to see. */
+    public static PlayerActionBarEvent playerActionBar(Netherrack server,
+                                                       com.netherrack.server.player.Player player,
+                                                       String message, int fadeInTime,
+                                                       int stayTime, int fadeOutTime) {
+        PlayerActionBarEvent event = new PlayerActionBarEvent(apiPlayer(server, player), message,
+                fadeInTime, stayTime, fadeOutTime);
+        call(server, event);
+        return event;
+    }
+
+    /** Announces a toast send and returns the title and content listeners want the client to see. */
+    public static PlayerToastEvent playerToast(Netherrack server,
+                                               com.netherrack.server.player.Player player,
+                                               String title, String content) {
+        PlayerToastEvent event = new PlayerToastEvent(apiPlayer(server, player), title, content);
+        call(server, event);
+        return event;
+    }
+
+    /** Announces a popup send and returns the message listeners want the client to see. */
+    public static PlayerPopupEvent playerPopup(Netherrack server,
+                                               com.netherrack.server.player.Player player,
+                                               String message) {
+        PlayerPopupEvent event = new PlayerPopupEvent(apiPlayer(server, player), message);
         call(server, event);
         return event;
     }

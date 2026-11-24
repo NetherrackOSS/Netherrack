@@ -21,6 +21,7 @@ import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.player.PlayerSurvival;
 import com.netherrack.server.player.SkinParser;
 import com.netherrack.server.plugin.EventBridge;
+import com.netherrack.server.setup.Lang;
 import com.netherrack.server.util.ColorCodes;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.world.World;
@@ -170,6 +171,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
     private volatile SerializedSkin skin = SkinParser.fallback();
     private volatile String deviceId = "";
     private volatile BuildPlatform buildPlatform = BuildPlatform.UNKNOWN;
+    private volatile String languageCode = Lang.DEFAULT_CODE;
     private volatile Player player;
     private volatile boolean inventoryOpen;
 
@@ -288,6 +290,9 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             if (clientData.get("DeviceOS") instanceof Number os) {
                 buildPlatform = BuildPlatform.from(os.intValue());
             }
+            if (clientData.get("LanguageCode") instanceof String language) {
+                languageCode = Lang.normalize(language);
+            }
         } catch (Exception e) {
             Logger.warn("Could not read the client data for " + username + ", using a blank skin: " + e.getMessage());
         }
@@ -317,7 +322,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
         GameType gameMode = saved != null && saved.gameMode() != null ? saved.gameMode() : netherrack.getDefaultGameMode();
         player = new Player(session, username, UUID.fromString(uuid), xuid, runtimeEntityId,
-                skin, deviceId, buildPlatform, spawnPosition, gameMode);
+                skin, deviceId, buildPlatform, languageCode, spawnPosition, gameMode);
         // Health, hunger and what wears them down. A returning player gets their saved
         // numbers back; a new one starts full.
         PlayerSurvival survival = new PlayerSurvival(player, players, itemEntities);

@@ -53,6 +53,9 @@ public final class HelloPlugin extends PluginBase {
         if (command.getName().equals("testform")) {
             return testForm(sender);
         }
+        if (command.getName().equals("testmessages")) {
+            return testMessages(sender);
+        }
         String target = args.length == 0 ? sender.getName() : String.join(" ", args);
         sender.sendMessage(greeting() + " " + target);
         return true;
@@ -100,6 +103,20 @@ public final class HelloPlugin extends PluginBase {
         if (player.showForm(form) == -1) {
             sender.sendMessage("You already have a form open.");
         }
+        return true;
+    }
+
+    /** /testmessages exercises the three cancellable HUD message events. */
+    private boolean testMessages(CommandSender sender) {
+        Player player = sender.getPlayer();
+        if (player == null) {
+            sender.sendMessage("Only players can use /testmessages.");
+            return true;
+        }
+        player.sendActionBar("Action bar from HelloPlugin");
+        player.sendToast("HelloPlugin", "Toast from HelloPlugin");
+        player.sendPopup("Popup from HelloPlugin");
+        sender.sendMessage("Sent an action bar, toast and popup.");
         return true;
     }
 

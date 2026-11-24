@@ -54,17 +54,21 @@ public interface CommandSender {
      * page numbers) - parameters are only ever strings on the wire.
      */
     static String render(String key, String... params) {
+        return render(Lang.current, key, params);
+    }
+
+    static String render(Lang lang, String key, String... params) {
         Object[] resolved = new Object[params.length];
         for (int i = 0; i < params.length; i++) {
             String param = params[i];
             if (param.startsWith("%")) {
-                resolved[i] = Lang.current.get(param.substring(1));
+                resolved[i] = lang.get(param.substring(1));
             } else if (param.matches("-?\\d{1,9}")) {
                 resolved[i] = Integer.parseInt(param);
             } else {
                 resolved[i] = param;
             }
         }
-        return Lang.current.get(key, resolved);
+        return lang.get(key, resolved);
     }
 }

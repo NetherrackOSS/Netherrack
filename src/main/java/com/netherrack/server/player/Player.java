@@ -1,6 +1,8 @@
 package com.netherrack.server.player;
 
+import com.netherrack.server.command.CommandSender;
 import com.netherrack.server.network.ChunkView;
+import com.netherrack.server.setup.Lang;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.protocol.bedrock.BedrockServerSession;
 import org.cloudburstmc.protocol.bedrock.data.Ability;
@@ -52,6 +54,7 @@ public class Player {
     private final SerializedSkin skin;
     private final String deviceId;
     private final BuildPlatform buildPlatform;
+    private final String languageCode;
     private final PlayerInventory inventory = new PlayerInventory();
 
     // Written by this player's own network thread, read by every other player's when
@@ -71,8 +74,8 @@ public class Player {
     private volatile PlayerSurvival survival;
 
     public Player(BedrockServerSession session, String username, UUID uuid, String xuid, long entityId,
-                  SerializedSkin skin, String deviceId, BuildPlatform buildPlatform, Vector3f position,
-                  GameType gameMode) {
+                  SerializedSkin skin, String deviceId, BuildPlatform buildPlatform, String languageCode,
+                  Vector3f position, GameType gameMode) {
         this.gameMode = gameMode;
         this.session = session;
         this.username = username;
@@ -82,6 +85,7 @@ public class Player {
         this.skin = skin;
         this.deviceId = deviceId;
         this.buildPlatform = buildPlatform;
+        this.languageCode = Lang.normalize(languageCode);
         this.position = position;
     }
 
@@ -120,6 +124,11 @@ public class Player {
 
     public BuildPlatform getBuildPlatform() {
         return buildPlatform;
+    }
+
+    /** The client's UI language, normalized to a lang file code like "pt-BR". */
+    public String getLanguageCode() {
+        return languageCode;
     }
 
     public PlayerInventory getInventory() {
@@ -273,11 +282,16 @@ public class Player {
     }
 
     /**
-     * A message in the player's chat that their client words itself, from a vanilla
-     * translation key (e.g. "commands.op.message"). A parameter starting with "%" is
-     * itself a key.
+     * A translated message in the player's chat. Vanilla keys are sent as translation packets so
+     * the client can localize them; custom keys are rendered with Netherrack's lang file for the
+     * player's locale when available.
      */
     public void sendTranslation(String key, String... params) {
+        Lang lang = Lang.of(languageCode);
+        if (!Lang.DEFAULT_CODE.equals(lang.getCode()) && !lang.get(key).equals(key)) {
+            sendText(CommandSender.render(lang, key, params));
+            return;
+        }
         TextPacket text = new TextPacket();
         text.setType(TextPacket.Type.TRANSLATION);
         text.setNeedsTranslation(true);
@@ -286,6 +300,18 @@ public class Player {
         text.setPlatformChatId("");
         text.setMessage(key);
         text.setParameters(List.of(params));
+        session.sendPacket(text);
+    }
+
+    /** A plain chat/system message to this player. */
+    public void sendText(String message) {
+        TextPacket text = new TextPacket();
+        text.setType(TextPacket.Type.RAW);
+        text.setNeedsTranslation(false);
+        text.setSourceName("");
+        text.setXuid("");
+        text.setPlatformChatId("");
+        text.setMessage(message);
         session.sendPacket(text);
     }
 

@@ -1,3 +1,21 @@
+# v0.5.0-beta
+
+### Added
+- **HUD message events:** plugins can now send action bar, toast and popup messages through
+  Cloudburst Nukkit-style `Player` methods. Each send fires a cancellable
+  `PlayerActionBarEvent`, `PlayerToastEvent` or `PlayerPopupEvent` with mutable message, title and
+  timing values before the client receives the packet. `examples/hello-plugin/` has a
+  `/testmessages` command that exercises all three.
+- **Client-language messages:** command replies, join and leave announcements, and death messages
+  are rendered with the player's UI language when Netherrack has a matching local key. Keys that
+  aren't translated locally keep using vanilla translation packets, so the client still handles
+  them as before.
+
+### Changed
+- **Plugin API version:** the API artifact and JitPack tag are now `v0.5.0-SNAPSHOT`, and plugins
+  declare `api-version: 0.5.0`. The new HUD methods and events are part of this minor version;
+  `/version` reports `0.5.0-SNAPSHOT`.
+
 # v0.4.0-beta
 
 ### Added

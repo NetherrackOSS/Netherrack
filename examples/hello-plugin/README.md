@@ -1,8 +1,9 @@
 # HelloPlugin
 
 A minimal Maven plugin for Netherrack, showing `onLoad()`, `onEnable()`, `onDisable()`, a
-listener for server, player and chat events, a permission node, `/hello`, `/where` and `/testform`
-commands, a delayed scheduler task, the form UI, and the player/world API.
+listener for server, player, chat and HUD message events, a permission node, `/hello`, `/where`,
+`/testform` and `/testmessages` commands, a delayed scheduler task, the form UI, and the
+player/world API.
 
 ## Build
 
@@ -32,9 +33,10 @@ can run it. `/where` (or `/loc`) reports the player's feet position, facing, gam
 underfoot from a `BlockSnapshot`; `/where up` teleports them five blocks higher while keeping their
 facing, and `/where copy` writes that snapshot into the block beside them to demonstrate `setBlock`.
 `/testform` opens a Bedrock simple form titled `Test`, with the message `Test` and one button also
-named `Test`; clicking it or closing the form sends a short chat reply. A one-tick delayed task prints `[HelloPlugin] HelloPlugin's delayed task ran.` after
-startup. Stopping the server prints both `[HelloPlugin] HelloPlugin heard the server stop.` and
-`[HelloPlugin] HelloPlugin disabled`.
+named `Test`; clicking it or closing the form sends a short chat reply. `/testmessages` sends an
+action bar, toast and popup, and the listener logs each matching event. A one-tick delayed task
+prints `[HelloPlugin] HelloPlugin's delayed task ran.` after startup. Stopping the server prints
+both `[HelloPlugin] HelloPlugin heard the server stop.` and `[HelloPlugin] HelloPlugin disabled`.
 
 The plugin depends on `NetherrackAPI` with `provided` scope, so its jar does not bundle the API —
 the server supplies it.

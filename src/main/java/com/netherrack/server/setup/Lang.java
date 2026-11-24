@@ -2,11 +2,12 @@ package com.netherrack.server.setup;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Loads translated strings for a given language code from the bundled .properties files
@@ -29,19 +30,52 @@ public class Lang {
 
     public static final String DEFAULT_CODE = "en-US";
 
+    private static final Map<String, Lang> LOADED = new ConcurrentHashMap<>();
+
     /**
      * The language the rest of the server (startup/shutdown messages, commands, etc.)
      * should use. Set once at startup, either from the setup wizard's choice or from the
      * "language" saved in an existing server.properties.
      */
-    public static Lang current = new Lang(DEFAULT_CODE);
+    public static Lang current = of(DEFAULT_CODE);
 
     private final String code;
     private final Properties properties = new Properties();
 
     public Lang(String code) {
-        this.code = AVAILABLE.containsKey(code) ? code : DEFAULT_CODE;
+        this.code = normalize(code);
         load(this.code);
+    }
+
+    /** A cached language for a code, falling back to the default when unknown. */
+    public static Lang of(String code) {
+        String normalized = normalize(code);
+        return LOADED.computeIfAbsent(normalized, Lang::new);
+    }
+
+    /** Maps Bedrock/client locale codes like "pt_BR" to our "pt-BR" file names. */
+    public static String normalize(String code) {
+        if (code == null || code.isBlank()) {
+            return DEFAULT_CODE;
+        }
+        String normalized = code.replace('_', '-').trim();
+        if (AVAILABLE.containsKey(normalized)) {
+            return normalized;
+        }
+        String lower = normalized.toLowerCase(Locale.ROOT);
+        for (String available : AVAILABLE.keySet()) {
+            if (available.toLowerCase(Locale.ROOT).equals(lower)) {
+                return available;
+            }
+        }
+        String language = lower.split("-", 2)[0];
+        for (String available : AVAILABLE.keySet()) {
+            if (available.toLowerCase(Locale.ROOT).startsWith(language + "-")
+                    || available.toLowerCase(Locale.ROOT).equals(language)) {
+                return available;
+            }
+        }
+        return DEFAULT_CODE;
     }
 
     private void load(String languageCode) {

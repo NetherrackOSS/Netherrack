@@ -2,6 +2,7 @@ package com.netherrack.server.player;
 
 import com.netherrack.server.block.Block;
 import com.netherrack.server.entity.ItemEntities;
+import com.netherrack.server.setup.Lang;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.world.Chunk;
 import com.netherrack.server.world.World;
@@ -23,6 +24,7 @@ import org.cloudburstmc.protocol.bedrock.packet.SetHealthPacket;
 import org.cloudburstmc.protocol.bedrock.packet.TextPacket;
 import org.cloudburstmc.protocol.bedrock.packet.UpdateAttributesPacket;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -843,17 +845,27 @@ public final class PlayerSurvival {
         player.getSession().sendPacket(info);
 
         if (players != null) {
-            TextPacket message = new TextPacket();
-            message.setType(TextPacket.Type.TRANSLATION);
-            message.setSourceName("");
-            message.setXuid("");
-            message.setNeedsTranslation(true);
-            message.setMessage(cause.deathKey());
-            message.getParameters().add(player.getUsername());
+            String key = cause.deathKey();
+            List<String> params = new ArrayList<>();
+            params.add(player.getUsername());
             if (cause == DamageCause.PLAYER && lastAttacker != null) {
-                message.getParameters().add(lastAttacker.getUsername());
+                params.add(lastAttacker.getUsername());
             }
-            players.sendToAll(message);
+            for (Player other : players.getPlayers()) {
+                Lang lang = Lang.of(other.getLanguageCode());
+                if (!Lang.DEFAULT_CODE.equals(lang.getCode()) && !lang.get(key).equals(key)) {
+                    other.sendText(lang.get(key, params.toArray()));
+                    continue;
+                }
+                TextPacket message = new TextPacket();
+                message.setType(TextPacket.Type.TRANSLATION);
+                message.setSourceName("");
+                message.setXuid("");
+                message.setNeedsTranslation(true);
+                message.setMessage(key);
+                message.setParameters(params);
+                other.getSession().sendPacket(message);
+            }
         }
         Logger.info(player.getUsername() + " died (" + cause.deathKey() + ").");
     }

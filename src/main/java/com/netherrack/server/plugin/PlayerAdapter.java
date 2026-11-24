@@ -4,6 +4,9 @@ import com.netherrack.api.Server;
 import com.netherrack.api.command.CommandSender;
 import com.netherrack.api.entity.GameMode;
 import com.netherrack.api.entity.Player;
+import com.netherrack.api.event.player.PlayerActionBarEvent;
+import com.netherrack.api.event.player.PlayerPopupEvent;
+import com.netherrack.api.event.player.PlayerToastEvent;
 import com.netherrack.api.form.Form;
 import com.netherrack.api.permission.PermissionAttachment;
 import com.netherrack.api.permission.PermissionState;
@@ -14,7 +17,9 @@ import com.netherrack.server.network.SessionDisconnect;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.protocol.bedrock.data.GameType;
 import org.cloudburstmc.protocol.bedrock.packet.ModalFormRequestPacket;
+import org.cloudburstmc.protocol.bedrock.packet.SetTitlePacket;
 import org.cloudburstmc.protocol.bedrock.packet.TextPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ToastRequestPacket;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -103,6 +108,59 @@ final class PlayerAdapter implements Player, CommandSender {
         text.setSourceName("");
         text.setXuid("");
         text.setMessage(message);
+        text.setNeedsTranslation(false);
+        player.getSession().sendPacket(text);
+    }
+
+    @Override
+    public void sendActionBar(String message) {
+        sendActionBar(message, 1, 0, 1);
+    }
+
+    @Override
+    public void sendActionBar(String message, int fadeInTime, int stayTime, int fadeOutTime) {
+        PlayerActionBarEvent event = EventBridge.playerActionBar(apiServer.server(), player, message,
+                fadeInTime, stayTime, fadeOutTime);
+        if (event.isCancelled()) {
+            return;
+        }
+        SetTitlePacket title = new SetTitlePacket();
+        title.setType(SetTitlePacket.Type.ACTIONBAR);
+        title.setText(event.getMessage());
+        title.setFadeInTime(event.getFadeInTime());
+        title.setStayTime(event.getStayTime());
+        title.setFadeOutTime(event.getFadeOutTime());
+        // The codec writes these optional identifiers as strings, so null defaults fail to encode.
+        title.setXuid("");
+        title.setPlatformOnlineId("");
+        title.setFilteredTitleText("");
+        player.getSession().sendPacket(title);
+    }
+
+    @Override
+    public void sendToast(String title, String content) {
+        PlayerToastEvent event = EventBridge.playerToast(apiServer.server(), player, title, content);
+        if (event.isCancelled()) {
+            return;
+        }
+        ToastRequestPacket toast = new ToastRequestPacket();
+        toast.setTitle(event.getTitle());
+        toast.setContent(event.getContent());
+        player.getSession().sendPacket(toast);
+    }
+
+    @Override
+    public void sendPopup(String message) {
+        PlayerPopupEvent event = EventBridge.playerPopup(apiServer.server(), player, message);
+        if (event.isCancelled()) {
+            return;
+        }
+        TextPacket text = new TextPacket();
+        text.setType(TextPacket.Type.POPUP);
+        text.setSourceName("");
+        text.setXuid("");
+        text.setPlatformChatId("");
+        text.setMessage(event.getMessage());
         text.setNeedsTranslation(false);
         player.getSession().sendPacket(text);
     }

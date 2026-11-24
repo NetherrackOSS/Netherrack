@@ -1,6 +1,7 @@
 package com.netherrack.server.command;
 
 import com.netherrack.server.player.Player;
+import com.netherrack.server.setup.Lang;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandOriginData;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandOriginType;
 import org.cloudburstmc.protocol.bedrock.data.command.CommandOutputMessage;
@@ -35,12 +36,18 @@ public class PlayerCommandSender implements CommandSender {
 
     @Override
     public void sendMessage(boolean success, String key, String... params) {
-        // Vanilla's keys go to the client to word; Netherrack's own are worded here, since
-        // the client doesn't have them. The library calls the first field "internal", but
-        // it's each message's success flag - the client shows a message red without it.
-        send(success, key.startsWith("command.")
-                ? new CommandOutputMessage(success, CommandSender.render(key, params), new String[0])
-                : new CommandOutputMessage(success, key, params));
+        Lang lang = Lang.of(player.getLanguageCode());
+        if (key.startsWith("command.")) {
+            send(success, new CommandOutputMessage(success, CommandSender.render(lang, key, params), new String[0]));
+            return;
+        }
+        // Vanilla keys are known by clients, but our custom keys may only exist in our own lang
+        // files. For non-default client locales, render locally so custom messages are translated.
+        if (!Lang.DEFAULT_CODE.equals(lang.getCode()) && !lang.get(key).equals(key)) {
+            send(success, new CommandOutputMessage(success, CommandSender.render(lang, key, params), new String[0]));
+            return;
+        }
+        send(success, new CommandOutputMessage(success, key, params));
     }
 
     @Override
@@ -51,6 +58,11 @@ public class PlayerCommandSender implements CommandSender {
 
     @Override
     public void sendColored(String color, String key, String... params) {
+        Lang lang = Lang.of(player.getLanguageCode());
+        if (!Lang.DEFAULT_CODE.equals(lang.getCode()) && !lang.get(key).equals(key)) {
+            send(true, new CommandOutputMessage(true, color + CommandSender.render(lang, key, params), new String[0]));
+            return;
+        }
         // A key written "%key" inside other text is worded by the client in its place, so
         // the color code can go in front of it.
         send(true, new CommandOutputMessage(true, color + "%" + key, params));
