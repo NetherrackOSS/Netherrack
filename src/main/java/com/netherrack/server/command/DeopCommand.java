@@ -42,7 +42,7 @@ public class DeopCommand implements Command {
             return;
         }
         server.applyPermission(player, server.getPermissions().getDefault());
-        sender.sendSuccess("commands.deop.success", player.getUsername());
         player.sendTranslation("commands.deop.message");
+        Command.broadcastCommandMessage(server, sender, "commands.deop.success", player.getUsername());
     }
 }

@@ -91,10 +91,10 @@ public class TpCommand implements Command {
 
         String key = "commands.tp.success";
         String[] params = {target.getUsername(), destination.getUsername()};
-        sender.sendSuccess(key, params);
         if (target != sender.getPlayer()) {
             target.sendTranslation(key, params);
         }
+        Command.broadcastCommandMessage(server, sender, key, params);
     }
 
     private static void toCoordinates(Netherrack server, CommandSender sender, Player target, String[] args, int first) {
@@ -108,10 +108,10 @@ public class TpCommand implements Command {
         Vector3f feet = position.sub(0, Player.EYE_HEIGHT, 0);
         String[] params = {target.getUsername(), number(feet.getX()), number(feet.getY()), number(feet.getZ())};
         String key = "commands.tp.success.coordinates";
-        sender.sendSuccess(key, params);
         if (target != sender.getPlayer()) {
             target.sendTranslation(key, params);
         }
+        Command.broadcastCommandMessage(server, sender, key, params);
     }
 
     /** The position the three coordinates name, at eye height, or null if one isn't a number. */

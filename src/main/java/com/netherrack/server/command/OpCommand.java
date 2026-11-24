@@ -47,7 +47,7 @@ public class OpCommand implements Command {
             return;
         }
         server.applyPermission(player, Permission.OPERATOR);
-        sender.sendSuccess("commands.op.success", player.getUsername());
         player.sendTranslation("commands.op.message");
+        Command.broadcastCommandMessage(server, sender, "commands.op.success", player.getUsername());
     }
 }

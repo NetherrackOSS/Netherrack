@@ -80,7 +80,10 @@ public class NetherNetServer {
                 // Network's docs/external-signaling notes - so this keeps a direct-connect
                 // server workable without needing a certificate.
                 .setRequiresTls(false)
-                .setMotd(buildMotd(world, maxPlayers))
+                // Nukkit rebuilds its query information for each server-list request instead of
+                // caching a MOTD. PongData is an immutable record, so a fixed setMotd(...) would
+                // keep the player count from startup forever; a provider makes it live.
+                .setMotdProvider((host, address, client) -> buildMotd(players, maxPlayers))
                 .build();
 
         eventLoopGroup = new NioEventLoopGroup();
@@ -155,15 +158,16 @@ public class NetherNetServer {
 
     /**
      * The server info shown in the client's server list - NetherNet's structured equivalent
-     * of the semicolon-delimited MOTD string RakNet's advertisement used.
+     * of the semicolon-delimited MOTD string RakNet's advertisement used. Built for every
+     * request so the player count is the number online now, not the number at startup.
      */
-    private PongData buildMotd(World world, int maxPlayers) {
+    private PongData buildMotd(PlayerManager players, int maxPlayers) {
         return new PongData.Builder()
                 .setServerName(config.get("server-name", "Netherrack Server"))
                 .setProtocol(Bedrock_v2225.CODEC.getProtocolVersion())
                 .setVersion(Bedrock_v2225.CODEC.getMinecraftVersion())
                 .setLevelName(config.get("level-name", "Bedrock level"))
-                .setPlayerCount(0)
+                .setPlayerCount(players.getPlayers().size())
                 .setMaxPlayerCount(maxPlayers)
                 // transportLayer, connectionType and dataVersion are left at PongData's own
                 // defaults (see PongData.DEFAULT) - this project doesn't yet know the exact

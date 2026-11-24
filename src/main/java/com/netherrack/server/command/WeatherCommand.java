@@ -76,6 +76,6 @@ public class WeatherCommand implements Command {
         world.setRaining(raining);
         world.setThundering(thundering);
         server.getPlayerManager().broadcastWeather(raining, thundering);
-        sender.sendSuccess(key);
+        Command.broadcastCommandMessage(server, sender, key);
     }
 }

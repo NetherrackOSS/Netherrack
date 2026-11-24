@@ -47,6 +47,6 @@ public class KillCommand implements Command {
         if (survival != null) {
             survival.kill(PlayerSurvival.DamageCause.GENERIC);
         }
-        sender.sendSuccess("commands.kill.successful", target.getUsername());
+        Command.broadcastCommandMessage(server, sender, "commands.kill.successful", target.getUsername());
     }
 }

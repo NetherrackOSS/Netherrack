@@ -62,7 +62,8 @@ public class ClearCommand implements Command {
         if (removed == 0) {
             sender.sendFailure("commands.clear.failure.no.items", target.getUsername());
         } else {
-            sender.sendSuccess("commands.clear.success", target.getUsername(), String.valueOf(removed));
+            Command.broadcastCommandMessage(server, sender, "commands.clear.success",
+                    target.getUsername(), String.valueOf(removed));
         }
     }
 }

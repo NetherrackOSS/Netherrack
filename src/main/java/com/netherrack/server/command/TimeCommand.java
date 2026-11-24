@@ -77,7 +77,8 @@ public class TimeCommand implements Command {
         }
         world.setTime(value);
         server.getPlayerManager().broadcastTime(world.getTime());
-        sender.sendSuccess("commands.time.set", String.valueOf(world.getTime()));
+        Command.broadcastCommandMessage(server, sender, "commands.time.set",
+                String.valueOf(world.getTime()));
     }
 
     private static void add(Netherrack server, CommandSender sender, World world, String[] args) {
@@ -92,7 +93,7 @@ public class TimeCommand implements Command {
         }
         world.setTime(world.getTime() + amount);
         server.getPlayerManager().broadcastTime(world.getTime());
-        sender.sendSuccess("commands.time.added", String.valueOf(amount));
+        Command.broadcastCommandMessage(server, sender, "commands.time.added", String.valueOf(amount));
     }
 
     private static Integer parseTime(String value) {

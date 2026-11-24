@@ -50,12 +50,15 @@ public class GamemodeCommand implements Command {
         }
 
         server.getPlayerManager().changeGameMode(player, gameMode);
-        String modeName = "%createWorldScreen.gameMode." + GameModes.name(gameMode);
+        // Passing a key rather than a word lets every client render the game mode in its own
+        // language, both for the target's own message and for the broadcast to other operators.
+        String mode = "%createWorldScreen.gameMode." + GameModes.name(gameMode);
         if (player == sender.getPlayer()) {
-            sender.sendSuccess("commands.gamemode.success.self", modeName);
+            Command.broadcastCommandMessage(server, sender, "commands.gamemode.success.self", mode);
         } else {
-            sender.sendSuccess("commands.gamemode.success.other", modeName, player.getUsername());
-            player.sendTranslation("gameMode.changed", modeName);
+            player.sendTranslation("gameMode.changed", mode);
+            Command.broadcastCommandMessage(server, sender, "commands.gamemode.success.other",
+                    mode, player.getUsername());
         }
     }
 }

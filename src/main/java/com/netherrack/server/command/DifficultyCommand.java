@@ -44,7 +44,13 @@ public class DifficultyCommand implements Command {
         }
         server.setDifficulty(difficulty);
         server.getPlayerManager().broadcastDifficulty(difficulty);
-        sender.sendSuccess("commands.difficulty.success", Netherrack.difficultyName(difficulty));
+        Command.broadcastCommandMessage(server, sender, "commands.difficulty.success",
+                difficultyNameKey(difficulty));
+    }
+
+    /** The difficulty as a vanilla key, so each recipient sees the name in their own language. */
+    private static String difficultyNameKey(int difficulty) {
+        return "%options.difficulty." + Netherrack.difficultyName(difficulty);
     }
 
     private static Integer parseDifficulty(String value) {

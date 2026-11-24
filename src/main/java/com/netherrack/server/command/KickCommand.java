@@ -54,9 +54,10 @@ public class KickCommand implements Command {
         SessionDisconnect.disconnect(target.getSession(), kickMessage);
 
         if (reason.isEmpty()) {
-            sender.sendSuccess("commands.kick.success", target.getUsername());
+            Command.broadcastCommandMessage(server, sender, "commands.kick.success", target.getUsername());
         } else {
-            sender.sendSuccess("commands.kick.success.reason", target.getUsername(), reason);
+            Command.broadcastCommandMessage(server, sender, "commands.kick.success.reason",
+                    target.getUsername(), reason);
         }
     }
 }

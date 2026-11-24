@@ -62,7 +62,7 @@ public class WhitelistCommand implements Command {
                     return;
                 }
                 server.setWhitelistEnabled(true);
-                sender.sendSuccess("command.whitelist.enabled");
+                Command.broadcastCommandMessage(server, sender, "command.whitelist.enabled");
                 return;
             case "off":
                 if (args.length != 1) {
@@ -70,7 +70,7 @@ public class WhitelistCommand implements Command {
                     return;
                 }
                 server.setWhitelistEnabled(false);
-                sender.sendSuccess("command.whitelist.disabled");
+                Command.broadcastCommandMessage(server, sender, "command.whitelist.disabled");
                 return;
             case "list":
                 if (args.length != 1) {
@@ -85,7 +85,7 @@ public class WhitelistCommand implements Command {
                     return;
                 }
                 server.reloadWhitelist();
-                sender.sendSuccess("command.whitelist.reloaded");
+                Command.broadcastCommandMessage(server, sender, "command.whitelist.reloaded");
                 return;
             case "add":
             case "remove":
@@ -122,11 +122,15 @@ public class WhitelistCommand implements Command {
                 ? server.getWhitelist().add(name, xuid, uuid)
                 : server.getWhitelist().remove(name, xuid, uuid);
         if (action.equals("add")) {
-            String key = changed ? "command.whitelist.added" : "command.whitelist.already_added";
-            sender.sendSuccess(key, name);
+            if (changed) {
+                Command.broadcastCommandMessage(server, sender, "command.whitelist.added", name);
+            } else {
+                sender.sendSuccess("command.whitelist.already_added", name);
+            }
+        } else if (changed) {
+            Command.broadcastCommandMessage(server, sender, "command.whitelist.removed", name);
         } else {
-            String key = changed ? "command.whitelist.removed" : "command.whitelist.not_added";
-            sender.sendSuccess(key, name);
+            sender.sendSuccess("command.whitelist.not_added", name);
         }
     }
 

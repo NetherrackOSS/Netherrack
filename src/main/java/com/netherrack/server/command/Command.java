@@ -1,6 +1,10 @@
 package com.netherrack.server.command;
 
 import com.netherrack.server.Netherrack;
+import com.netherrack.server.player.Permission;
+import com.netherrack.server.player.Player;
+import com.netherrack.server.setup.Lang;
+import com.netherrack.server.util.Logger;
 
 import java.util.List;
 
@@ -63,6 +67,38 @@ public interface Command {
      */
     default String getPermissionNode() {
         return "";
+    }
+
+    /**
+     * Shows a command's result to the people who watch admin commands, as Cloudburst Nukkit does
+     * with its administrative broadcast channel. Each recipient gets the result in their own
+     * language: the source sees it alone, the console logs "[source: result]" in the server's
+     * language, and other online operators get that line in gray italics in their client language.
+     * Only a command's outcome goes through here: errors, usage and information queries stay with
+     * the sender so the channel remains worth watching.
+     */
+    static void broadcastCommandMessage(Netherrack server, CommandSender sender, String key,
+                                        String... params) {
+        CommandSender source = LoggingCommandSender.unwrap(sender);
+        Player sourcePlayer = source.getPlayer();
+        if (sourcePlayer != null) {
+            source.sendText(CommandSender.render(langOf(sourcePlayer), key, params));
+        }
+        Logger.info(adminLine(Lang.current, sender.getName(), key, params));
+        for (Player operator : server.getPlayerManager().getPlayers()) {
+            if (operator.getPermission() == Permission.OPERATOR && operator != sourcePlayer) {
+                String line = adminLine(langOf(operator), sender.getName(), key, params);
+                operator.sendText("\u00a77\u00a7o" + line + "\u00a7r");
+            }
+        }
+    }
+
+    private static Lang langOf(Player player) {
+        return Lang.of(player.getLanguageCode());
+    }
+
+    private static String adminLine(Lang lang, String source, String key, String[] params) {
+        return "[" + source + ": " + CommandSender.render(lang, key, params) + "]";
     }
 
     void execute(Netherrack server, CommandSender sender, String[] args);

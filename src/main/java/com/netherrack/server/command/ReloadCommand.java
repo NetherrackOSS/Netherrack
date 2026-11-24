@@ -47,8 +47,8 @@ public class ReloadCommand implements Command {
         if (debug != null) {
             NettyLogBridge.setDebug(Boolean.parseBoolean(debug));
         }
-        sender.sendText(Lang.current.get("command.reload.logging"));
+        Command.broadcastCommandMessage(server, sender, "command.reload.logging");
         server.getPluginManager().reload();
-        sender.sendSuccess("command.reload.plugins");
+        Command.broadcastCommandMessage(server, sender, "command.reload.plugins");
     }
 }

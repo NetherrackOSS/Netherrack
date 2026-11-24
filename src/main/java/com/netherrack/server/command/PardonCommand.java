@@ -45,6 +45,10 @@ public class PardonCommand implements Command {
         }
 
         boolean removed = server.getBans().remove(args[0]);
-        sender.sendSuccess(removed ? "command.pardon.success" : "command.pardon.not_banned", args[0]);
+        if (removed) {
+            Command.broadcastCommandMessage(server, sender, "command.pardon.success", args[0]);
+        } else {
+            sender.sendSuccess("command.pardon.not_banned", args[0]);
+        }
     }
 }

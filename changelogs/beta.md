@@ -10,11 +10,26 @@
   are rendered with the player's UI language when Netherrack has a matching local key. Keys that
   aren't translated locally keep using vanilla translation packets, so the client still handles
   them as before.
+- **Operator command broadcasts:** successful administrative command replies are now shown to the
+  console and other online operators as `[Sender: result]`, like Cloudburst Nukkit's admin command
+  broadcasts. Every recipient gets the result in their own language: the console uses the server
+  language, and other operators see it in gray italics. Every other player command reply - errors,
+  usage, help, version and plugin commands - is also logged to the console, without duplicating
+  replies that were broadcast.
 
 ### Changed
+- **Vanilla command wording:** the vanilla keys in `lang/en-US.properties` and
+  `lang/pt-BR.properties` now use the strings from Minecraft's default `en_US.lang` and
+  `pt_BR.lang`, including game mode and difficulty names, so server-rendered output matches what
+  clients say.
 - **Plugin API version:** the API artifact and JitPack tag are now `v0.5.0-SNAPSHOT`, and plugins
   declare `api-version: 0.5.0`. The new HUD methods and events are part of this minor version;
   `/version` reports `0.5.0-SNAPSHOT`.
+
+### Fixed
+- **Server list player count:** the NetherNet server-list response now reports how many players are
+  online when the list is refreshed, instead of always showing 0. Like Nukkit's query information,
+  the MOTD is rebuilt per request from the live player manager.
 
 # v0.4.0-beta
 

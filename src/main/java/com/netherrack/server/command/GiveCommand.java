@@ -91,7 +91,7 @@ public class GiveCommand implements Command {
             target.getSession().sendPacket(packet);
         }
 
-        sender.sendSuccess("commands.give.success",
+        Command.broadcastCommandMessage(server, sender, "commands.give.success",
                 displayName(identifier), String.valueOf(amount), target.getUsername());
     }
 

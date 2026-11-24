@@ -65,9 +65,9 @@ public class BanCommand implements Command {
         }
 
         if (reason.isEmpty()) {
-            sender.sendSuccess("command.ban.success", name);
+            Command.broadcastCommandMessage(server, sender, "command.ban.success", name);
         } else {
-            sender.sendSuccess("command.ban.success.reason", name, reason);
+            Command.broadcastCommandMessage(server, sender, "command.ban.success.reason", name, reason);
         }
     }
 }

@@ -17,10 +17,7 @@ public class StopCommand implements Command {
 
     @Override
     public void execute(Netherrack server, CommandSender sender, String[] args) {
-        // The console already logs the server stopping; a player is told as vanilla tells them.
-        if (sender.getPlayer() != null) {
-            sender.sendSuccess("commands.stop.start");
-        }
+        Command.broadcastCommandMessage(server, sender, "commands.stop.start");
         server.shutdown();
     }
 }
