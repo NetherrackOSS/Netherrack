@@ -1,6 +1,10 @@
 # v0.5.0-beta
 
 ### Added
+- **Nukkit-style login log:** as soon as a player's StartGame sequence is sent, the console
+  records their address, entity id, world and block coordinates in a line like
+  `Player1[/192.168.1.36:59274] logged in with entity id 3 at (world, 139, 65, 11)`. Like
+  Nukkit, this no longer waits for the client to finish loading.
 - **HUD message events:** plugins can now send action bar, toast and popup messages through
   Cloudburst Nukkit-style `Player` methods. Each send fires a cancellable
   `PlayerActionBarEvent`, `PlayerToastEvent` or `PlayerPopupEvent` with mutable message, title and
@@ -27,6 +31,11 @@
   `/version` reports `0.5.0-SNAPSHOT`.
 
 ### Fixed
+- **Early join visibility:** players are registered as online as soon as their StartGame sequence
+  is sent, instead of waiting for their client to finish loading. Other clients now receive the
+  joining player's player-list entry while the new client is still loading, as Nukkit's
+  `addOnlinePlayer()` does, and the player is spawned into any views that already have their
+  chunks. The join message still waits for the client to finish loading.
 - **Server list player count:** the NetherNet server-list response now reports how many players are
   online when the list is refreshed, instead of always showing 0. Like Nukkit's query information,
   the MOTD is rebuilt per request from the live player manager.

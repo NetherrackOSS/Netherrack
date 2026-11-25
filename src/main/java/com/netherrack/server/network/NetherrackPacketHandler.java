@@ -114,6 +114,7 @@ import org.cloudburstmc.protocol.common.PacketSignal;
 import org.cloudburstmc.protocol.common.util.OptionalBoolean;
 import org.jose4j.json.JsonUtil;
 
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -126,10 +127,10 @@ import java.util.concurrent.ThreadLocalRandom;
  * Drives one player's login sequence:
  * RequestNetworkSettings -> NetworkSettings -> Login -> PlayStatus(LOGIN_SUCCESS)
  * -> ResourcePacksInfo -> ResourcePackClientResponse -> ResourcePackStack -> DimensionData
- * -> JigsawStructureData -> VoxelShapes -> StartGame -> BiomeDefinitionList -> AvailableEntityIdentifiers
- * -> ItemComponent -> CreativeContent -> TrimData -> CraftingData
+ * -> JigsawStructureData -> VoxelShapes -> StartGame -> log login -> BiomeDefinitionList -> AvailableEntityIdentifiers
+ * -> ItemComponent -> CreativeContent -> TrimData -> CraftingData -> register online
  * -> RequestChunkRadius -> ChunkRadiusUpdated -> NetworkChunkPublisherUpdate -> LevelChunk(s)
- * -> PlayStatus(PLAYER_SPAWN) -> SetLocalPlayerAsInitialized
+ * -> PlayStatus(PLAYER_SPAWN) -> SetLocalPlayerAsInitialized -> announce join
  * <p>
  * Targets Bedrock_v2225 (1.26.60) because that's what the real client actually speaks on
  * the wire - the codec has to match the client's real protocol version, full stop, or every
@@ -167,6 +168,10 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
     private volatile String uuid;
     private volatile Vector3f spawnPosition;
     private volatile boolean spawned;
+    /** Guards the whole StartGame sequence, including the online registration at its end. */
+    private volatile boolean startGameSent;
+    /** The client has loaded its own chunks, so its join announcement can go out. */
+    private volatile boolean locallyInitialized;
     private volatile String xuid = "";
     private volatile SerializedSkin skin = SkinParser.fallback();
     private volatile String deviceId = "";
@@ -388,7 +393,12 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
                 stack.setGameVersion(Bedrock_v2225.CODEC.getMinecraftVersion());
                 session.sendPacket(stack);
             }
-            case COMPLETED -> sendStartGame();
+            case COMPLETED -> {
+                if (!startGameSent) {
+                    startGameSent = true;
+                    sendStartGame();
+                }
+            }
             case REFUSED -> SessionDisconnect.disconnect(session,
                     "You must accept the resource packs to play.");
             default -> {
@@ -491,14 +501,44 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
     @Override
     public PacketSignal handle(SetLocalPlayerAsInitializedPacket packet) {
-        // Only now, with the client past its loading screen, is the player actually in
-        // the world for others to see. The items around them appear on the next tick.
-        players.join(player);
-
-        players.broadcastPresence(true, username);
-        EventBridge.playerJoin(netherrack, player);
+        // The login line was already logged with StartGame, and the player was registered as
+        // online there too, so other clients have been able to see them while this client
+        // loaded. What still waits for now is the join announcement and showing this client
+        // the players around them: its chunks have arrived by this point. Nukkit likewise
+        // announces the join in doFirstSpawn() on this packet, after logging the login.
+        if (player != null && !locallyInitialized) {
+            locallyInitialized = true;
+            players.updateVisibility();
+            players.broadcastPresence(true, username);
+            EventBridge.playerJoin(netherrack, player);
+        }
 
         return PacketSignal.HANDLED;
+    }
+
+    /**
+     * Logs the console line operators use to tell who logged in and where: the player's
+     * address, entity id, world and coordinates in Nukkit's format. Nukkit writes this right
+     * after StartGame, before chunks or local initialization, so it doesn't wait on the
+     * client's frame rate. Netherrack keeps player positions at eye height, so the logged
+     * coordinates use their feet to match the block coordinates Nukkit logs.
+     */
+    private void logLogin() {
+        String endpoint = String.valueOf(session.getSocketAddress());
+        if (session.getSocketAddress() instanceof InetSocketAddress address) {
+            String host = address.getAddress() != null
+                    ? address.getAddress().getHostAddress()
+                    : address.getHostString();
+            endpoint = host + ":" + address.getPort();
+        }
+        if (!endpoint.startsWith("/")) {
+            endpoint = "/" + endpoint;
+        }
+
+        Vector3f feet = player.getFeetPosition();
+        Logger.info(username + "[" + endpoint + "] logged in with entity id " + player.getEntityId()
+                + " at (" + world.getName() + ", " + feet.getFloorX() + ", " + feet.getFloorY()
+                + ", " + feet.getFloorZ() + ")");
     }
 
     /**
@@ -1178,7 +1218,9 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             // Saved before they leave the player list: stopping the server saves everyone
             // still on it, so whoever is leaving at that moment is saved one way or the other.
             world.savePlayer(player.getUuid(), PlayerData.save(player));
-            if (players.leave(player)) {
+            if (players.remove(player) && locallyInitialized) {
+                // Registered at StartGame, but only announced once the client loaded, so a
+                // quit message would be the other half of a join message nobody ever saw.
                 players.broadcastPresence(false, username);
                 EventBridge.playerQuit(netherrack, player);
             }
@@ -1323,6 +1365,11 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
         session.sendPacket(startGame);
 
+        // Nukkit logs this immediately after sending StartGame, before any chunks or the
+        // client's local-init packet. That's the point the server has accepted the player,
+        // so operators hear about them without waiting for their game to finish loading.
+        logLogin();
+
         BiomeDefinitionListPacket biomes = new BiomeDefinitionListPacket();
         biomes.setBiomes(vanillaData.getBiomeDefinitions());
         session.sendPacket(biomes);
@@ -1359,5 +1406,12 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         // lists numbered from 1 would collide on every network id.
         session.sendPacket(Recipes.get().trimPacket());
         session.sendPacket(Recipes.get().packet());
+
+        // Nukkit calls addOnlinePlayer() at the end of its own login sequence, before the
+        // client has asked for chunks or reported itself initialized. Doing this here rather
+        // than on SetLocalPlayerAsInitialized means other connected clients get this player's
+        // skin and entity while this client is still loading, without waiting on its frame
+        // rate. The join message still waits until doFirstSpawn()'s equivalent below.
+        players.add(player);
     }
 }

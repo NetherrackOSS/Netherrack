@@ -46,14 +46,18 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Every player currently in the world, and keeping them visible to each other. Everyone is
- * on everyone's player list, but a player only sees the others in the chunks their client
- * has - within their view distance - as vanilla does: others appear as they come into a
- * player's view and go as they leave it ({@link #updateVisibility}), and their movement,
- * sneaking, swings, armor and what they hold ({@link #updateEquipment}) only go to those
- * who can see them. Spectators are never seen.
+ * Every player currently in the world, and keeping them visible to each other. Players go
+ * on this list when their StartGame sequence is sent, as Nukkit does, so clients already in
+ * the world can show them before their own game finishes loading. Join announcements wait
+ * for the client to finish loading, and are handled by the packet handler rather than here.
  * <p>
- * Players' packets are handled on different network threads. join(), leave() and
+ * Everyone is on everyone's player list, but a player only sees the others in the chunks
+ * their client has - within their view distance - as vanilla does: others appear as they
+ * come into a player's view and go as they leave it ({@link #updateVisibility}), and their
+ * movement, sneaking, swings, armor and what they hold ({@link #updateEquipment}) only go
+ * to those who can see them. Spectators are never seen.
+ * <p>
+ * Players' packets are handled on different network threads. add(), remove() and
  * updateVisibility() are synchronized so two players joining at once can't each miss the
  * other; sending is safe from any thread, since the protocol library queues packets per
  * connection.
@@ -98,11 +102,13 @@ public class PlayerManager {
     }
 
     /**
-     * Adds a player who has just finished loading into the world: everyone already here
-     * goes on their player list (themselves included, as vanilla does) and they go on
-     * everyone else's. Who sees whom in the world is then down to their views.
+     * Registers a player as soon as their StartGame sequence has been sent, before their
+     * client has loaded the world. Everyone already here goes on their player list (themselves
+     * included, as vanilla does) and they go on everyone else's, so an alt account can see
+     * who is connecting without waiting for the new client to finish loading. Players whose
+     * chunks are already on the other clients' views are shown to them here too.
      */
-    public synchronized void join(Player joining) {
+    public synchronized void add(Player joining) {
         players.put(joining.getUuid(), joining);
 
         List<PlayerListPacket.Entry> everyone = new ArrayList<>();
@@ -127,10 +133,16 @@ public class PlayerManager {
         updateVisibility();
     }
 
-    /** @return whether they had joined - false if they left before finishing loading in. */
-    public synchronized boolean leave(Player leaving) {
+    /**
+     * Removes a player from the online list, whether or not their client finished loading.
+     * The caller decides whether a join announcement was sent, and so whether a quit
+     * announcement belongs alongside it.
+     *
+     * @return whether they were registered at all
+     */
+    public synchronized boolean remove(Player leaving) {
         if (players.remove(leaving.getUuid()) == null) {
-            return false; // never finished joining, so nobody was shown them
+            return false;
         }
         shownEquipment.remove(leaving);
 
