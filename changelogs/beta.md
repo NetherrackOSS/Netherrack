@@ -1,6 +1,10 @@
 # v0.5.0-beta
 
 ### Added
+- **Button icons in forms:** plugin `SimpleForm` buttons can now carry an icon through
+  `addButton(text, FormButtonImage.path(...))` or `FormButtonImage.url(...)`, serialized into the
+  button's `image` field like Cloudburst Nukkit's `ElementButtonImageData`. The example plugin's
+  `/testform` shows both icon types next to a plain button.
 - **Nukkit-style login log:** as soon as a player's StartGame sequence is sent, the console
   records their address, entity id, world and block coordinates in a line like
   `Player1[/192.168.1.36:59274] logged in with entity id 3 at (world, 139, 65, 11)`. Like
@@ -26,9 +30,10 @@
   `lang/pt-BR.properties` now use the strings from Minecraft's default `en_US.lang` and
   `pt_BR.lang`, including game mode and difficulty names, so server-rendered output matches what
   clients say.
-- **Plugin API version:** the API artifact and JitPack tag are now `v0.5.0-SNAPSHOT`, and plugins
-  declare `api-version: 0.5.0`. The new HUD methods and events are part of this minor version;
-  `/version` reports `0.5.0-SNAPSHOT`.
+- **Plugin API version:** the API artifact and JitPack tag are now `v0.5.1-SNAPSHOT`, and plugins
+  declare `api-version: 0.5.1`; plugins declaring `0.5.0` still load because compatibility is
+  checked by major and minor version. The new form button icons are part of this patch; `/version`
+  still reports the server version `0.5.0-SNAPSHOT`.
 
 ### Fixed
 - **Early join visibility:** players are registered as online as soon as their StartGame sequence

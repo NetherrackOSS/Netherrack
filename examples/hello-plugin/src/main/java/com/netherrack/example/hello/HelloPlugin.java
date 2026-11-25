@@ -3,6 +3,7 @@ package com.netherrack.example.hello;
 import com.netherrack.api.command.Command;
 import com.netherrack.api.command.CommandSender;
 import com.netherrack.api.entity.Player;
+import com.netherrack.api.form.FormButtonImage;
 import com.netherrack.api.form.SimpleForm;
 import com.netherrack.api.permission.Permission;
 import com.netherrack.api.permission.PermissionDefault;
@@ -88,7 +89,7 @@ public final class HelloPlugin extends PluginBase {
         return true;
     }
 
-    /** /testform opens the smallest possible Bedrock form: one title, one message, one button. */
+    /** /testform opens a Bedrock form with a resource-pack icon, a URL icon and a plain button. */
     private boolean testForm(CommandSender sender) {
         Player player = sender.getPlayer();
         if (player == null) {
@@ -96,7 +97,9 @@ public final class HelloPlugin extends PluginBase {
             return true;
         }
         SimpleForm form = new SimpleForm("Test", "Test")
-                .addButton("Test")
+                .addButton("Apple", FormButtonImage.path("textures/items/apple"))
+                .addButton("Website", FormButtonImage.url("https://example.com/button.png"))
+                .addButton("Plain")
                 .onSubmit((submitter, response) -> submitter.sendMessage(
                         "You clicked " + response.getButtonText() + "."))
                 .onClose(submitter -> submitter.sendMessage("You closed the test form."));

@@ -27,8 +27,8 @@ public final class VersionInfo {
     public static final String GIT_COMMIT = load("/git.properties").getProperty("git.commit.id.abbrev", UNKNOWN);
 
     /**
-     * The plugin API this server builds against, as plugins see it: "0.5.0-SNAPSHOT" rather
-     * than the "v0.5.0-SNAPSHOT" git tag used by Maven and JitPack.
+     * The plugin API this server builds against, as plugins see it: "0.5.1-SNAPSHOT" rather
+     * than the "v0.5.1-SNAPSHOT" git tag used by Maven and JitPack.
      */
     public static final String PLUGIN_API_VERSION = stripTagPrefix(
             load("/plugin-api-version.properties").getProperty("version", "v" + UNKNOWN));
