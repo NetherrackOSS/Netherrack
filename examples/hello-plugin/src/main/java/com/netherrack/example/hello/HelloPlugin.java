@@ -2,6 +2,7 @@ package com.netherrack.example.hello;
 
 import com.netherrack.api.command.Command;
 import com.netherrack.api.command.CommandSender;
+import com.netherrack.api.entity.OfflinePlayer;
 import com.netherrack.api.entity.Player;
 import com.netherrack.api.form.FormButtonImage;
 import com.netherrack.api.form.SimpleForm;
@@ -19,9 +20,9 @@ import java.util.Locale;
  * scheduled task and the player/world API.
  * <p>
  * The greeting is kept in the plugin's config.yml, so the first start writes a file that can be
- * edited without rebuilding the jar. The listener demonstrates the events a plugin can hear, and
- * /where reads a player's position, game mode and the block beneath them, then teleports or copies
- * that block when asked.
+ * edited without rebuilding the jar. The listener demonstrates the events a plugin can hear,
+ * /where reads a player's position, game mode and the block beneath them, and /testapi shows
+ * metadata and offline player lookups.
  */
 public final class HelloPlugin extends PluginBase {
 
@@ -56,6 +57,9 @@ public final class HelloPlugin extends PluginBase {
         }
         if (command.getName().equals("testmessages")) {
             return testMessages(sender);
+        }
+        if (command.getName().equals("testapi")) {
+            return testApi(sender);
         }
         String target = args.length == 0 ? sender.getName() : String.join(" ", args);
         sender.sendMessage(greeting() + " " + target);
@@ -120,6 +124,22 @@ public final class HelloPlugin extends PluginBase {
         player.sendToast("HelloPlugin", "Toast from HelloPlugin");
         player.sendPopup("Popup from HelloPlugin");
         sender.sendMessage("Sent an action bar, toast and popup.");
+        return true;
+    }
+
+    /** /testapi shows metadata and the identity a plugin can look up even after a disconnect. */
+    private boolean testApi(CommandSender sender) {
+        Player player = sender.getPlayer();
+        if (player == null) {
+            sender.sendMessage("Only players can use /testapi.");
+            return true;
+        }
+        player.setPrefix("[Example]");
+        player.setMeta("rank", "tester");
+        OfflinePlayer identity = getServer().getOfflinePlayer(player.getUuid());
+        sender.sendMessage("Prefix: " + player.getPrefix() + "; rank: " + player.getMeta("rank"));
+        sender.sendMessage("Lookup: " + identity.getName() + " online=" + identity.isOnline()
+                + "; known identities: " + getServer().getOfflinePlayers().size());
         return true;
     }
 

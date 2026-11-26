@@ -1,6 +1,6 @@
 name: HelloPlugin
 version: 1.0.0
-api-version: 0.5.1
+api-version: 0.6.0
 main: com.netherrack.example.hello.HelloPlugin
 description: A minimal lifecycle, event, command, form, scheduler and world API example plugin
 author: Netherrack
@@ -23,4 +23,8 @@ commands:
   testmessages:
     description: Sends an action bar, toast and popup through the event API
     usage: /testmessages
+    permission: hello.use
+  testapi:
+    description: Shows player metadata and offline player lookup
+    usage: /testapi
     permission: hello.use

@@ -36,6 +36,7 @@ import com.netherrack.server.player.Permission;
 import com.netherrack.server.player.Permissions;
 import com.netherrack.server.player.Player;
 import com.netherrack.server.player.PlayerData;
+import com.netherrack.server.player.PlayerIdentities;
 import com.netherrack.server.player.PlayerManager;
 import com.netherrack.server.player.PlayerSurvival;
 import com.netherrack.server.player.Whitelist;
@@ -75,7 +76,7 @@ public class Netherrack {
     private final ServerConfig config;
     private final NetherrackConfig settings;
     private final NetherNetServer netherNetServer;
-    private final PlayerManager playerManager = new PlayerManager();
+    private final PlayerManager playerManager = new PlayerManager(this);
     private final WorldManager worldManager;
     private final CommandManager commandManager;
     private final PluginManagerImpl pluginManager;
@@ -88,6 +89,7 @@ public class Netherrack {
     private Permissions permissions;
     private Whitelist whitelist;
     private BanList bans;
+    private PlayerIdentities playerIdentities;
     private ScheduledExecutorService ticker;
     private ScheduledExecutorService autosave;
     private boolean worldClosed;
@@ -143,6 +145,11 @@ public class Netherrack {
 
     public BanList getBans() {
         return bans;
+    }
+
+    /** The name/XUID/UUID pairs plugins use for offline player lookups. */
+    public PlayerIdentities getPlayerIdentities() {
+        return playerIdentities;
     }
 
     /** The matching ban, if this player is banned. Expired entries are discarded as they're read. */
@@ -289,6 +296,7 @@ public class Netherrack {
         permissions = Permissions.load(Permissions.FILE, defaultPermission());
         whitelist = Whitelist.load(Whitelist.FILE);
         bans = BanList.load(BanList.FILE);
+        playerIdentities = PlayerIdentities.load(PlayerIdentities.FILE);
 
         NettyLogBridge.setDebug(settings.getBoolean("logs.debug"));
         if (NettyLogBridge.isDebug()) {
@@ -322,7 +330,7 @@ public class Netherrack {
 
         sleep(150);
         Logger.info(lang.get("server.opening", ip, port));
-        itemEntities = new ItemEntities(world, playerManager);
+        itemEntities = new ItemEntities(this, world, playerManager);
         chunkViews = new ChunkViews(world);
         // The recipes load now rather than at a first player's join, so nobody waits for
         // the file's parsing, and the operator sees the count before anyone connects.

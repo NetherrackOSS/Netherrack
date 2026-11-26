@@ -4,7 +4,9 @@ import com.netherrack.api.Server;
 import com.netherrack.api.command.CommandSender;
 import com.netherrack.api.entity.GameMode;
 import com.netherrack.api.entity.Player;
+import com.netherrack.api.entity.TeleportCause;
 import com.netherrack.api.event.player.PlayerActionBarEvent;
+import com.netherrack.api.event.player.PlayerMetadataChangeEvent;
 import com.netherrack.api.event.player.PlayerPopupEvent;
 import com.netherrack.api.event.player.PlayerToastEvent;
 import com.netherrack.api.form.Form;
@@ -22,9 +24,11 @@ import org.cloudburstmc.protocol.bedrock.packet.TextPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ToastRequestPacket;
 
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Presents one connected player through the API's Player interface.
@@ -41,6 +45,7 @@ final class PlayerAdapter implements Player, CommandSender {
     // Forms are opened and answered on the player's network thread. Keeping the open one here
     // means Nukkit-style form callbacks can live on the form itself without leaking protocol types.
     private final Map<Integer, Form> openForms = new HashMap<>();
+    private final Map<String, String> meta = new ConcurrentHashMap<>();
     private boolean formOpen;
 
     PlayerAdapter(com.netherrack.server.player.Player player, ServerAdapter apiServer) {
@@ -67,6 +72,36 @@ final class PlayerAdapter implements Player, CommandSender {
     }
 
     @Override
+    public String getMeta(String key) {
+        return meta.get(key.toLowerCase(Locale.ROOT));
+    }
+
+    @Override
+    public void setMeta(String key, String value) {
+        String lower = key.toLowerCase(Locale.ROOT);
+        PlayerMetadataChangeEvent event = EventBridge.playerMetadataChange(apiServer.server(), player,
+                lower, meta.get(lower), value);
+        if (event.isCancelled()) {
+            return;
+        }
+        if (event.getNewValue() == null) {
+            meta.remove(lower);
+        } else {
+            meta.put(lower, event.getNewValue());
+        }
+    }
+
+    @Override
+    public void removeMeta(String key) {
+        setMeta(key, null);
+    }
+
+    @Override
+    public Map<String, String> getMeta() {
+        return Map.copyOf(meta);
+    }
+
+    @Override
     public World getWorld() {
         return apiServer.worldAdapter();
     }
@@ -86,7 +121,7 @@ final class PlayerAdapter implements Player, CommandSender {
         Vector3f eyes = Vector3f.from(location.getX(),
                 location.getY() + com.netherrack.server.player.Player.EYE_HEIGHT, location.getZ());
         Vector3f rotation = Vector3f.from(location.getPitch(), location.getYaw(), location.getYaw());
-        apiServer.server().getPlayerManager().teleport(player, eyes, rotation);
+        apiServer.server().getPlayerManager().teleport(player, eyes, rotation, TeleportCause.PLUGIN);
     }
 
     @Override
@@ -240,7 +275,7 @@ final class PlayerAdapter implements Player, CommandSender {
         permissions.recalculatePermissions();
     }
 
-    private static GameMode gameMode(GameType type) {
+    static GameMode gameMode(GameType type) {
         return switch (type) {
             case CREATIVE -> GameMode.CREATIVE;
             case ADVENTURE -> GameMode.ADVENTURE;

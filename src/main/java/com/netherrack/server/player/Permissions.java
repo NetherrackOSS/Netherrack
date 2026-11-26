@@ -94,6 +94,17 @@ public class Permissions {
         return defaultPermission;
     }
 
+    /** The XUIDs that have an entry, for plugin-side offline player lookups. */
+    public synchronized List<String> xuids() {
+        List<String> result = new ArrayList<>();
+        for (Map<String, Object> entry : entries) {
+            if (entry.get("xuid") instanceof String xuid && !xuid.isBlank()) {
+                result.add(xuid);
+            }
+        }
+        return List.copyOf(result);
+    }
+
     /**
      * Makes the player with this XUID an operator, saving the file. Returns false if they
      * already were one.

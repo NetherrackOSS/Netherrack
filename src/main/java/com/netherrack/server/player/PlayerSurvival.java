@@ -1,7 +1,9 @@
 package com.netherrack.server.player;
 
+import com.netherrack.server.Netherrack;
 import com.netherrack.server.block.Block;
 import com.netherrack.server.entity.ItemEntities;
+import com.netherrack.server.plugin.EventBridge;
 import com.netherrack.server.setup.Lang;
 import com.netherrack.server.util.Logger;
 import com.netherrack.server.world.Chunk;
@@ -99,6 +101,7 @@ public final class PlayerSurvival {
     /** How long after a finished meal its consume request may still arrive and be confirmed. */
     private static final long EAT_CONFIRM_GRACE_MILLIS = 1000;
 
+    private final Netherrack server;
     private final Player player;
     /** For showing other players the hurt and death animations; null in tests. */
     private final PlayerManager players;
@@ -145,7 +148,8 @@ public final class PlayerSurvival {
     private float sentSaturation = -1;
     private float sentExhaustion = -1;
 
-    public PlayerSurvival(Player player, PlayerManager players, ItemEntities items) {
+    public PlayerSurvival(Netherrack server, Player player, PlayerManager players, ItemEntities items) {
+        this.server = server;
         this.player = player;
         this.players = players;
         this.items = items;
@@ -493,7 +497,11 @@ public final class PlayerSurvival {
         if (taken < 0) {
             return false; // shrugged off, as vanilla's damage immunity does
         }
-        health = Math.max(0, health - taken);
+        var event = EventBridge.playerDamage(server, player, EventBridge.damageCause(cause), taken);
+        if (event.isCancelled() || event.getAmount() <= 0) {
+            return false;
+        }
+        health = Math.max(0, health - (float) event.getAmount());
         exhaust(0.1); // being hurt is exhausting, as in vanilla
         playHurt(cause);
         if (health <= 0) {
@@ -703,9 +711,17 @@ public final class PlayerSurvival {
                 && offhand == usingOffhand && (offhand || slot == usingSlot)) {
             return false; // the same meal, still going
         }
+        var event = EventBridge.itemConsume(server, player, item);
+        if (event.isCancelled()) {
+            return false;
+        }
+        ItemData food = EventBridge.item(event.getItem());
+        if (Foods.of(food) == null || food.getDefinition() == null) {
+            return false;
+        }
         usingItem = true;
-        usingItemId = id;
-        usingItemData = item;
+        usingItemId = food.getDefinition().getIdentifier();
+        usingItemData = food;
         usingSlot = slot;
         usingOffhand = offhand;
         useTicks = 0;
@@ -822,9 +838,26 @@ public final class PlayerSurvival {
         inLava = false;
         usingItem = false;
         resetTimers();
-        dropCarriedItems();
+        // The inventory is emptied here, before the event, so listeners can edit the drop list
+        // without having to know how the server stores slots.
+        List<ItemData> spilled = player.getInventory().spill();
+        var event = EventBridge.playerDeath(server, player, EventBridge.damageCause(cause),
+                cause.deathKey(), spilled);
+        if (items != null) {
+            List<ItemData> drops = new ArrayList<>();
+            for (var drop : event.getDrops()) {
+                ItemData item = EventBridge.item(drop);
+                if (!item.isNull()) {
+                    drops.add(item);
+                }
+            }
+            items.dropFromDeath(player.getFeetPosition(), drops);
+        }
         playDeath();
         sendStats();
+
+        String key = cause.deathKey();
+        String deathMessage = event.getDeathMessage();
 
         // Vanilla's respawn handshake starts here: the server searches at the death
         // position, and waits for the client to answer that it's ready (see the handler's
@@ -836,7 +869,7 @@ public final class PlayerSurvival {
         player.getSession().sendPacket(searching);
 
         DeathInfoPacket info = new DeathInfoPacket();
-        info.setCauseAttackName(cause.deathKey());
+        info.setCauseAttackName(deathMessage);
         info.getMessageList().add(player.getUsername());
         // A death at a player's hand is "was slain by <attacker>", so it names them too.
         if (cause == DamageCause.PLAYER && lastAttacker != null) {
@@ -845,13 +878,22 @@ public final class PlayerSurvival {
         player.getSession().sendPacket(info);
 
         if (players != null) {
-            String key = cause.deathKey();
             List<String> params = new ArrayList<>();
             params.add(player.getUsername());
             if (cause == DamageCause.PLAYER && lastAttacker != null) {
                 params.add(lastAttacker.getUsername());
             }
             for (Player other : players.getPlayers()) {
+                if (!deathMessage.equals(key)) {
+                    TextPacket plain = new TextPacket();
+                    plain.setType(TextPacket.Type.SYSTEM);
+                    plain.setSourceName("");
+                    plain.setXuid("");
+                    plain.setNeedsTranslation(false);
+                    plain.setMessage(deathMessage);
+                    other.getSession().sendPacket(plain);
+                    continue;
+                }
                 Lang lang = Lang.of(other.getLanguageCode());
                 if (!Lang.DEFAULT_CODE.equals(lang.getCode()) && !lang.get(key).equals(key)) {
                     other.sendText(lang.get(key, params.toArray()));
@@ -867,7 +909,7 @@ public final class PlayerSurvival {
                 other.getSession().sendPacket(message);
             }
         }
-        Logger.info(player.getUsername() + " died (" + cause.deathKey() + ").");
+        Logger.info(player.getUsername() + " died (" + deathMessage + ").");
     }
 
     private void resetTimers() {
@@ -876,17 +918,6 @@ public final class PlayerSurvival {
         lavaTimer = 0;
         fireDamageTimer = 0;
         voidTimer = 0;
-    }
-
-    /**
-     * Everything the player had when they died goes into the world around them, as it does
-     * in vanilla and every other server: however they died - falls, lava, starvation, or
-     * the /kill command - what they carried is left where they fell, in every game mode.
-     */
-    private void dropCarriedItems() {
-        if (items != null) {
-            items.dropFromDeath(player.getFeetPosition(), player.getInventory().spill());
-        }
     }
 
     /**

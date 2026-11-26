@@ -1,7 +1,10 @@
 package com.netherrack.server.player;
 
+import com.netherrack.api.item.InventoryClickAction;
+import com.netherrack.server.Netherrack;
 import com.netherrack.server.crafting.Recipes;
 import com.netherrack.server.network.VanillaData;
+import com.netherrack.server.plugin.EventBridge;
 import com.netherrack.server.util.Logger;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerId;
 import org.cloudburstmc.protocol.bedrock.data.inventory.ContainerSlotType;
@@ -16,6 +19,7 @@ import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.DestroyAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.DropAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.ItemStackRequestAction;
+import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.ItemStackRequestActionType;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.SwapAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.request.action.TransferItemStackRequestAction;
 import org.cloudburstmc.protocol.bedrock.data.inventory.itemstack.response.ItemStackResponse;
@@ -95,12 +99,19 @@ public class PlayerInventory {
     public record PickResult(int slot, boolean changed) {
     }
 
+    /** The gesture behind one item stack request, as described to plugin listeners. */
+    private record ClickInfo(int slot, ItemData item, ItemData cursor, InventoryClickAction action) {
+    }
+
     /** Why a request was refused. Only logged - the client just undoes the request. */
     private static class Refused extends Exception {
         Refused(String reason) {
             super(reason);
         }
     }
+
+    private final Netherrack server;
+    private final Player player;
 
     private ItemData[] main = emptySlots(SIZE);
     private ItemData[] armor = emptySlots(ARMOR_SIZE);
@@ -127,6 +138,11 @@ public class PlayerInventory {
     private ItemData lastEatenItem = ItemData.AIR;
     /** Set when a client request took the meal's item, so the tick won't take another. */
     private boolean mealTakenByRequest;
+
+    public PlayerInventory(Netherrack server, Player player) {
+        this.server = server;
+        this.player = player;
+    }
 
     /** The item in a main inventory slot. */
     public synchronized ItemData get(int slot) {
@@ -345,6 +361,14 @@ public class PlayerInventory {
      * slot really holds at least that many of the item the client says it does.
      */
     public synchronized void throwFromSlot(int slot, int itemId, int count) {
+        dropFromSlot(slot, itemId, count, null);
+    }
+
+    /**
+     * As {@link #throwFromSlot(int, int, int)}, but spawns the stack a listener chose instead of
+     * the one the client asked to throw. The slot is still validated against what the server has.
+     */
+    public synchronized void dropFromSlot(int slot, int itemId, int count, ItemData spawn) {
         if (slot < 0 || slot >= SIZE) {
             return;
         }
@@ -352,7 +376,9 @@ public class PlayerInventory {
         if (item.isNull() || item.getDefinition().getRuntimeId() != itemId || count < 1 || count > item.getCount()) {
             return;
         }
-        dropped.add(item.toBuilder().count(count).build());
+        if (spawn != null && !spawn.isNull()) {
+            dropped.add(spawn);
+        }
         main[slot] = removed(item, count);
     }
 
@@ -430,6 +456,16 @@ public class PlayerInventory {
         List<ItemStackRequestSlotData> touched = new ArrayList<>();
         List<ItemData> consumedNow = new ArrayList<>();
         try {
+            if (server.getPluginManager() != null) {
+                ClickInfo click = clickInfo(request);
+                if (click != null) {
+                    var event = EventBridge.inventoryClick(server, player, click.slot(), click.item(),
+                            cursor, click.action());
+                    if (event.isCancelled()) {
+                        throw new Refused("a plugin cancelled the inventory click");
+                    }
+                }
+            }
             boolean autoCraft = false;
             for (ItemStackRequestAction action : request.getActions()) {
                 autoCraft |= action instanceof AutoCraftRecipeAction;
@@ -450,6 +486,59 @@ public class PlayerInventory {
         consumed.addAll(consumedNow);
         remember(requestId, changes);
         return new ItemStackResponse(ItemStackResponseStatus.OK, requestId, describe(touched));
+    }
+
+    /**
+     * Describes the first meaningful action in a request as one inventory click. Bedrock sends a
+     * click as several small actions, so the event names the gesture rather than every slot the
+     * server will touch while applying the request. A request the server can't resolve yet has no
+     * click; the normal validation below still decides whether to refuse it.
+     */
+    private ClickInfo clickInfo(ItemStackRequest request) {
+        for (ItemStackRequestAction action : request.getActions()) {
+            try {
+                if (action instanceof AutoCraftRecipeAction || action instanceof CraftRecipeAction
+                        || action instanceof CraftCreativeAction) {
+                    return new ClickInfo(-1, ItemData.AIR, cursor, InventoryClickAction.CRAFT);
+                }
+                if (action instanceof TransferItemStackRequestAction transfer) {
+                    boolean take = action.getType() == ItemStackRequestActionType.TAKE;
+                    ItemStackRequestSlotData slotData = take ? transfer.getSource() : transfer.getDestination();
+                    Place place = checked(slotData, request.getRequestId(), List.of());
+                    return new ClickInfo(visibleSlot(place), get(place), cursor,
+                            take ? InventoryClickAction.TAKE : InventoryClickAction.PLACE);
+                }
+                if (action instanceof SwapAction swap) {
+                    Place place = checked(swap.getSource(), request.getRequestId(), List.of());
+                    return new ClickInfo(visibleSlot(place), get(place), cursor, InventoryClickAction.SWAP);
+                }
+                if (action instanceof DropAction drop) {
+                    Place place = checked(drop.getSource(), request.getRequestId(), List.of());
+                    return new ClickInfo(visibleSlot(place), get(place), cursor, InventoryClickAction.DROP);
+                }
+                if (action instanceof DestroyAction destroy) {
+                    Place place = checked(destroy.getSource(), request.getRequestId(), List.of());
+                    return new ClickInfo(visibleSlot(place), get(place), cursor, InventoryClickAction.DESTROY);
+                }
+                if (action instanceof ConsumeAction consume) {
+                    Place place = checked(consume.getSource(), request.getRequestId(), List.of());
+                    return new ClickInfo(visibleSlot(place), get(place), cursor, InventoryClickAction.CONSUME);
+                }
+            } catch (Refused ignored) {
+                return null; // the request itself will be refused below with the real reason
+            }
+        }
+        return null;
+    }
+
+    /** The inventory screen's slot number for a real slot, or -1 for a virtual one. */
+    private static int visibleSlot(Place place) {
+        return switch (place.kind()) {
+            case MAIN -> place.index();
+            case ARMOR -> SIZE + place.index();
+            case OFFHAND -> SIZE + ARMOR_SIZE;
+            default -> -1;
+        };
     }
 
     /**
@@ -784,7 +873,17 @@ public class PlayerInventory {
             if (item.isNull() || drop.getCount() < 1 || drop.getCount() > item.getCount()) {
                 throw new Refused("can't drop " + drop.getCount() + " from a stack of " + item.getCount());
             }
-            dropped.add(item.toBuilder().count(drop.getCount()).build());
+            ItemData spawn = item.toBuilder().count(drop.getCount()).build();
+            if (server.getPluginManager() != null) {
+                var event = EventBridge.itemDrop(server, player, EventBridge.stack(spawn));
+                if (event.isCancelled()) {
+                    throw new Refused("a plugin cancelled the item drop");
+                }
+                spawn = EventBridge.item(event.getItem());
+            }
+            if (!spawn.isNull()) {
+                dropped.add(spawn);
+            }
             set(from, removed(item, drop.getCount()));
             note(changes, from);
             touch(touched, drop.getSource());

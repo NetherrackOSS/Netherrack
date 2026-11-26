@@ -31,7 +31,7 @@
         <dependency>
             <groupId>com.github.NetherrackOSS</groupId>
             <artifactId>NetherrackAPI</artifactId>
-            <version>v0.5.1-SNAPSHOT</version>
+            <version>v0.6.0-SNAPSHOT</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>

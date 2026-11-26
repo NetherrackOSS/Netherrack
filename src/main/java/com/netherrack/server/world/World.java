@@ -9,6 +9,7 @@ import org.cloudburstmc.nbt.NbtMapBuilder;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -268,6 +269,19 @@ public class World {
             Logger.error("Could not read the saved data of player " + uuid + " in \"" + name
                     + "\", so they start afresh: " + e.getMessage());
             return null;
+        }
+    }
+
+    /** The UUIDs of players with saved data in this world, used for offline player lookups. */
+    public List<UUID> playerUuids() {
+        if (storage == null || closed) {
+            return List.of();
+        }
+        try {
+            return storage.playerUuids();
+        } catch (IOException e) {
+            Logger.error("Could not list the saved players in \"" + name + "\": " + e.getMessage());
+            return List.of();
         }
     }
 

@@ -326,11 +326,11 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         }
 
         GameType gameMode = saved != null && saved.gameMode() != null ? saved.gameMode() : netherrack.getDefaultGameMode();
-        player = new Player(session, username, UUID.fromString(uuid), xuid, runtimeEntityId,
+        player = new Player(netherrack, session, username, UUID.fromString(uuid), xuid, runtimeEntityId,
                 skin, deviceId, buildPlatform, languageCode, spawnPosition, gameMode);
         // Health, hunger and what wears them down. A returning player gets their saved
         // numbers back; a new one starts full.
-        PlayerSurvival survival = new PlayerSurvival(player, players, itemEntities);
+        PlayerSurvival survival = new PlayerSurvival(netherrack, player, players, itemEntities);
         player.setSurvival(survival);
         if (saved != null) {
             survival.restore(saved.stats());
@@ -347,6 +347,8 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         // From permissions.json by XUID; players not signed into Xbox Live get the default.
         Permission permission = netherrack.getPermissions().of(xuid);
         player.setPermission(permission, netherrack.commandLevelFor(permission));
+        // Keep an offline identity for plugins: worlds store UUIDs and permissions XUIDs separately.
+        netherrack.getPlayerIdentities().record(username, player.getUuid(), xuid);
 
         // Turn non-whitelisted players away before LOGIN_SUCCESS, with the configured reason.
         // PlayerLoginEvent is deliberately not fired: this is a server rule, not a plugin veto.
@@ -619,8 +621,28 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
         Vector3f position = packet.getPosition();
         Vector3f rotation = packet.getRotation();
+        boolean moved = !position.equals(player.getPosition()) || !rotation.equals(player.getRotation());
         boolean onGround = packet.getInputData().contains(PlayerAuthInputData.VERTICAL_COLLISION)
                 && packet.getDelta().getY() <= 0;
+        if (moved && netherrack.getPluginManager() != null) {
+            var event = EventBridge.playerMove(netherrack, player, player.getPosition(), position, rotation);
+            if (event.isCancelled()) {
+                // The client has already moved itself, so it has to be told where the server
+                // still has it; otherwise it keeps sending positions from the wrong place.
+                MovePlayerPacket back = new MovePlayerPacket();
+                back.setRuntimeEntityId(runtimeEntityId);
+                back.setPosition(player.getPosition());
+                back.setRotation(player.getRotation());
+                back.setMode(MovePlayerPacket.Mode.TELEPORT);
+                back.setTeleportationCause(MovePlayerPacket.TeleportationCause.UNKNOWN);
+                back.setOnGround(onGround);
+                back.setTick(packet.getTick());
+                session.sendPacket(back);
+                return PacketSignal.HANDLED;
+            }
+            position = EventBridge.position(event.getTo());
+            rotation = EventBridge.rotation(event.getTo());
+        }
         // Falls, landings and the hunger cost of moving are measured from what the client
         // reports - before the standing-still shortcut, so landing still hurts.
         if (survival != null) {
@@ -858,8 +880,18 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         PlayerSurvival survival = player.getSurvival();
         int slot = use.hotbarSlot();
         boolean validSlot = slot >= 0 && slot < PlayerInventory.HOTBAR_SIZE;
+        boolean offhand = use.hand() == HandSlot.OFFHAND;
+        ItemData held = offhand ? inventory.getOffhand()
+                : validSlot ? inventory.get(slot) : ItemData.AIR;
         int heldId = use.itemInHand() != null && use.itemInHand().getDefinition() != null
                 ? use.itemInHand().getDefinition().getRuntimeId() : 0;
+        if (netherrack.getPluginManager() != null) {
+            var event = EventBridge.itemUse(netherrack, player, EventBridge.stack(held),
+                    offhand ? -1 : slot, offhand, use.actionType() == 0 ? use.blockPosition() : null);
+            if (event.isCancelled()) {
+                return false;
+            }
+        }
         // On a block, a block item - a carved pumpkin or a head too - is placed, and a
         // block that's used is used; the prediction only says whether the client expects
         // that to work. An air use - eating, putting armor on - is handled whichever way
@@ -868,11 +900,8 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
                 && blockInteraction.handleItemUse(player, use.toItemUseTransaction());
         boolean changedInventory = false;
         if (!onBlockDone) {
-            boolean offhand = use.hand() == HandSlot.OFFHAND;
             boolean eating = false;
             if (use.actionType() == 1 && survival != null) {
-                ItemData held = offhand ? inventory.getOffhand()
-                        : validSlot ? inventory.get(slot) : ItemData.AIR;
                 if (Foods.of(held) != null) {
                     survival.useItem(held, offhand ? -1 : slot, offhand);
                     eating = true;
@@ -967,8 +996,21 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             Logger.debug("Ignored an inventory transaction from " + username + " that isn't a throw: " + actions);
             return;
         }
-        player.getInventory().throwFromSlot(fromSlot.getSlot(),
-                fromSlot.getFromItem().getDefinition().getRuntimeId(), intoWorld.getToItem().getCount());
+        int slot = fromSlot.getSlot();
+        int count = intoWorld.getToItem().getCount();
+        ItemData carried = slot >= 0 && slot < PlayerInventory.SIZE
+                ? player.getInventory().get(slot) : ItemData.AIR;
+        ItemData spawn = carried.isNull() ? ItemData.AIR : carried.toBuilder().count(count).build();
+        if (netherrack.getPluginManager() != null) {
+            var event = EventBridge.itemDrop(netherrack, player, EventBridge.stack(spawn));
+            if (event.isCancelled()) {
+                throwDroppedItems();
+                return;
+            }
+            spawn = EventBridge.item(event.getItem());
+        }
+        player.getInventory().dropFromSlot(slot,
+                fromSlot.getFromItem().getDefinition().getRuntimeId(), count, spawn);
         throwDroppedItems();
     }
 
@@ -1112,6 +1154,13 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         Vector3i spawn = world.getSpawn();
         Vector3f respawn = Vector3f.from(spawn.getX() + 0.5, spawn.getY() + Player.EYE_HEIGHT,
                 spawn.getZ() + 0.5);
+        Vector3f rotation = player.getRotation();
+        if (netherrack.getPluginManager() != null) {
+            var event = EventBridge.playerRespawn(netherrack, player,
+                    EventBridge.location(respawn, rotation));
+            respawn = EventBridge.position(event.getRespawnLocation());
+            rotation = EventBridge.rotation(event.getRespawnLocation());
+        }
 
         RespawnPacket searching = new RespawnPacket();
         searching.setPosition(Vector3f.from(respawn.getX(), 32767, respawn.getZ()));
@@ -1126,7 +1175,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         session.sendPacket(ready);
 
         survival.respawn();
-        player.setLocation(respawn, player.getRotation());
+        player.setLocation(respawn, rotation);
         chunkView.moveTo(respawn);
 
         // The corpse the others were shown was removed when the player died; they're
@@ -1136,7 +1185,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
         MovePlayerPacket teleport = new MovePlayerPacket();
         teleport.setRuntimeEntityId(runtimeEntityId);
         teleport.setPosition(respawn);
-        teleport.setRotation(player.getRotation());
+        teleport.setRotation(rotation);
         teleport.setMode(MovePlayerPacket.Mode.TELEPORT);
         teleport.setTeleportationCause(MovePlayerPacket.TeleportationCause.UNKNOWN);
         teleport.setOnGround(true);

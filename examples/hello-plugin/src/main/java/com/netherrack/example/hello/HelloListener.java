@@ -4,6 +4,8 @@ import com.netherrack.api.event.EventHandler;
 import com.netherrack.api.event.Listener;
 import com.netherrack.api.event.player.PlayerActionBarEvent;
 import com.netherrack.api.event.player.PlayerChatEvent;
+import com.netherrack.api.event.player.PlayerDamageEvent;
+import com.netherrack.api.event.player.PlayerItemUseEvent;
 import com.netherrack.api.event.player.PlayerJoinEvent;
 import com.netherrack.api.event.player.PlayerPopupEvent;
 import com.netherrack.api.event.player.PlayerToastEvent;
@@ -60,6 +62,18 @@ public final class HelloListener implements Listener {
         if (event.getMessage().contains("HelloPlugin")) {
             plugin.getLogger().info("HelloPlugin heard popup: " + event.getMessage());
         }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onDamage(PlayerDamageEvent event) {
+        plugin.getLogger().info(event.getPlayer().getName() + " took " + event.getAmount()
+                + " damage (" + event.getCause() + ").");
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onItemUse(PlayerItemUseEvent event) {
+        plugin.getLogger().info(event.getPlayer().getName() + " used " + event.getItem().getId()
+                + " in slot " + event.getSlot() + ".");
     }
 
     @EventHandler

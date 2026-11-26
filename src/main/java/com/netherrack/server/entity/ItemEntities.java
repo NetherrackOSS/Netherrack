@@ -1,7 +1,9 @@
 package com.netherrack.server.entity;
 
+import com.netherrack.server.Netherrack;
 import com.netherrack.server.player.Player;
 import com.netherrack.server.player.PlayerManager;
+import com.netherrack.server.plugin.EventBridge;
 import com.netherrack.server.world.World;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.math.vector.Vector3i;
@@ -48,12 +50,14 @@ public class ItemEntities {
     /** Clients draw items this far above the position they're given. */
     private static final double NETWORK_OFFSET = 0.125;
 
+    private final Netherrack server;
     private final World world;
     private final PlayerManager players;
     private final Map<Long, ItemEntity> items = new LinkedHashMap<>();
     private long tick;
 
-    public ItemEntities(World world, PlayerManager players) {
+    public ItemEntities(Netherrack server, World world, PlayerManager players) {
+        this.server = server;
         this.world = world;
         this.players = players;
     }
@@ -171,6 +175,12 @@ public class ItemEntities {
             ItemEntity item = iterator.next();
             if (item.getPickupDelay() > 0 || !inReach(player, item)) {
                 continue;
+            }
+            if (server.getPluginManager() != null) {
+                var event = EventBridge.itemPickup(server, player, item.getItem());
+                if (event.isCancelled()) {
+                    continue;
+                }
             }
             int count = item.getItem().getCount();
             int left = player.getInventory().add(item.getItem());

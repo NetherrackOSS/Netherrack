@@ -13,6 +13,7 @@ import org.cloudburstmc.nbt.NbtMap;
 import org.cloudburstmc.nbt.NbtUtils;
 import org.iq80.leveldb.CompressionType;
 import org.iq80.leveldb.DB;
+import org.iq80.leveldb.DBIterator;
 import org.iq80.leveldb.Options;
 import org.iq80.leveldb.WriteBatch;
 import org.iq80.leveldb.impl.Iq80DBFactory;
@@ -191,6 +192,32 @@ public final class WorldStorage implements Closeable {
         } catch (RuntimeException e) {
             throw new IOException(e.getMessage(), e);
         }
+    }
+
+    /**
+     * The UUIDs of players with a saved record in this world. Netherrack only stores gameplay
+     * data here, so these identities have no name or XUID until another source supplies one.
+     */
+    public List<UUID> playerUuids() throws IOException {
+        List<UUID> result = new ArrayList<>();
+        String prefix = "player_server_";
+        try (DBIterator iterator = db.iterator()) {
+            iterator.seekToFirst();
+            while (iterator.hasNext()) {
+                String key = new String(iterator.peekNext().getKey(), StandardCharsets.UTF_8);
+                if (key.startsWith(prefix)) {
+                    try {
+                        result.add(UUID.fromString(key.substring(prefix.length())));
+                    } catch (IllegalArgumentException ignored) {
+                        // A foreign record with the same prefix isn't a player identity.
+                    }
+                }
+                iterator.next();
+            }
+        } catch (RuntimeException e) {
+            throw new IOException(e.getMessage(), e);
+        }
+        return result;
     }
 
     @Override

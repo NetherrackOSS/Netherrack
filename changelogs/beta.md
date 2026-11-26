@@ -1,3 +1,33 @@
+# v0.6.0-beta
+
+### Added
+- **More player events:** plugins can now listen to `PlayerDamageEvent`, `PlayerDeathEvent`,
+  `PlayerRespawnEvent`, `PlayerMoveEvent`, `PlayerTeleportEvent`, `PlayerGameModeChangeEvent`,
+  `PlayerInventoryClickEvent`, `PlayerItemPickupEvent`, `PlayerItemDropEvent`, `PlayerItemUseEvent`
+  and `PlayerItemConsumeEvent`. Damage, movement, teleports, drops and item uses are cancellable
+  before the server applies them; damage amounts, death messages and drops, respawn and movement
+  destinations, and item stacks can be changed by listeners. The server fires them from the real
+  gameplay paths: survival damage and death, the respawn handshake, client movement and teleports,
+  game-mode commands, item pickups, hotbar and inventory drops, inventory stack requests, and both
+  item-use packet routes.
+- **Metadata API:** `Player` now has case-insensitive string metadata through `getMeta`,
+  `setMeta`, `removeMeta`, `getPrefix` and `setPrefix`. Changing a connected player's value fires a
+  cancellable `PlayerMetadataChangeEvent`, so a plugin can veto or rewrite what another plugin
+  stores. Metadata is per session and is not written to disk.
+- **Offline player lookup:** `Server.getOfflinePlayer(nameOrXuid)`, `getOfflinePlayer(UUID)` and
+  `getOfflinePlayers()` return `OfflinePlayer` identities with the last known name, UUID, XUID and
+  online state. New names and ids are recorded in `player-identity.json`, and lookup also considers
+  online players, permissions, the whitelist, bans and saved world UUIDs. This is an identity API,
+  not a saved inventory or position API.
+- **Item stacks in events:** the API's `ItemStack` gives plugins a protocol-free view of a stack's
+  id, count and damage; `InventoryClickAction`, `DamageCause` and `TeleportCause` name the matching
+  gameplay causes without leaking protocol enums.
+
+### Changed
+- **Plugin API version:** the API artifact and JitPack tag are now `v0.6.0-SNAPSHOT`, the server
+  version is `0.6.0-beta`, and plugins declare `api-version: 0.6.0`; plugins declaring `0.5.x`
+  still load because compatibility is checked by major and minor version.
+
 # v0.5.0-beta
 
 ### Added

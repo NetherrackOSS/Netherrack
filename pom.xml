@@ -6,7 +6,7 @@
 
     <groupId>com.netherrack</groupId>
     <artifactId>netherrack-server</artifactId>
-    <version>0.5.0-beta</version>
+    <version>0.6.0-beta</version>
     <packaging>jar</packaging>
 
     <name>Netherrack</name>
@@ -19,7 +19,7 @@
 
         <!-- The plugin API tag this server builds against. Both the dependency below and the
              version printed by /version read this, so they can't drift apart. -->
-        <netherrack.api.version>v0.5.1-SNAPSHOT</netherrack.api.version>
+        <netherrack.api.version>v0.6.0-SNAPSHOT</netherrack.api.version>
 
         <!-- CloudburstMC libraries used for the NetherNet transport + Bedrock protocol layer.
              Credit: https://github.com/CloudburstMC/Network and https://github.com/CloudburstMC/Protocol
@@ -72,7 +72,7 @@
     </repositories>
 
     <dependencies>
-        <!-- Plugin API contracts. JitPack publishes this from the v0.5.1-SNAPSHOT tag, and the
+        <!-- Plugin API contracts. JitPack publishes this from the v0.6.0-SNAPSHOT tag, and the
              shade plugin below bundles it into netherrack.jar so plugins use the server's copy. -->
         <dependency>
             <groupId>com.github.NetherrackOSS</groupId>

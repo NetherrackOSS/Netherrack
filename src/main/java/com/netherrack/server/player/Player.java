@@ -1,5 +1,6 @@
 package com.netherrack.server.player;
 
+import com.netherrack.server.Netherrack;
 import com.netherrack.server.command.CommandSender;
 import com.netherrack.server.network.ChunkView;
 import com.netherrack.server.setup.Lang;
@@ -55,7 +56,7 @@ public class Player {
     private final String deviceId;
     private final BuildPlatform buildPlatform;
     private final String languageCode;
-    private final PlayerInventory inventory = new PlayerInventory();
+    private final PlayerInventory inventory;
 
     // Written by this player's own network thread, read by every other player's when
     // they're shown this player - hence volatile.
@@ -73,9 +74,10 @@ public class Player {
     private volatile int commandLevel;
     private volatile PlayerSurvival survival;
 
-    public Player(BedrockServerSession session, String username, UUID uuid, String xuid, long entityId,
-                  SerializedSkin skin, String deviceId, BuildPlatform buildPlatform, String languageCode,
-                  Vector3f position, GameType gameMode) {
+    public Player(Netherrack server, BedrockServerSession session, String username, UUID uuid, String xuid,
+                  long entityId, SerializedSkin skin, String deviceId, BuildPlatform buildPlatform,
+                  String languageCode, Vector3f position, GameType gameMode) {
+        this.inventory = new PlayerInventory(server, this);
         this.gameMode = gameMode;
         this.session = session;
         this.username = username;

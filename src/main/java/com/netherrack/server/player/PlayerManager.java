@@ -1,8 +1,11 @@
 package com.netherrack.server.player;
 
+import com.netherrack.api.entity.TeleportCause;
+import com.netherrack.server.Netherrack;
 import com.netherrack.server.block.Block;
 import com.netherrack.server.network.ChunkView;
 import com.netherrack.server.network.HashedBlockDefinitions;
+import com.netherrack.server.plugin.EventBridge;
 import com.netherrack.server.setup.Lang;
 import com.netherrack.server.util.ColorCodes;
 import com.netherrack.server.util.Logger;
@@ -64,6 +67,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class PlayerManager {
 
+    private final Netherrack server;
     private final Map<UUID, Player> players = new ConcurrentHashMap<>();
     // What each player was last shown holding, to send others only what changes.
     private final Map<Player, Equipment> shownEquipment = new HashMap<>();
@@ -75,6 +79,10 @@ public class PlayerManager {
             int slot = player.getSelectedSlot();
             return new Equipment(slot, player.getInventory().get(slot), player.getInventory().getOffhand());
         }
+    }
+
+    public PlayerManager(Netherrack server) {
+        this.server = server;
     }
 
     public Collection<Player> getPlayers() {
@@ -129,6 +137,12 @@ public class PlayerManager {
      * spectator and showing them again, to those whose view they're in, as they stop being one.
      */
     public synchronized void changeGameMode(Player player, GameType gameMode) {
+        if (server.getPluginManager() != null) {
+            var event = EventBridge.playerGameModeChange(server, player, player.getGameMode(), gameMode);
+            if (event.isCancelled()) {
+                return;
+            }
+        }
         player.setGameMode(gameMode);
         updateVisibility();
     }
@@ -231,7 +245,7 @@ public class PlayerManager {
      * follows them, and everyone who can see them is told where they went.
      */
     public void teleport(Player player, Vector3f position) {
-        teleport(player, position, player.getRotation());
+        teleport(player, position, player.getRotation(), TeleportCause.COMMAND);
     }
 
     /**
@@ -240,6 +254,20 @@ public class PlayerManager {
      * pitch along with the position.
      */
     public void teleport(Player player, Vector3f position, Vector3f rotation) {
+        teleport(player, position, rotation, TeleportCause.COMMAND);
+    }
+
+    /** Teleports with an explicit cause, so plugins can tell a command from their own call. */
+    public void teleport(Player player, Vector3f position, Vector3f rotation, TeleportCause cause) {
+        if (server.getPluginManager() != null) {
+            var event = EventBridge.playerTeleport(server, player, player.getPosition(),
+                    player.getRotation(), position, rotation, cause);
+            if (event.isCancelled()) {
+                return;
+            }
+            position = EventBridge.position(event.getTo());
+            rotation = EventBridge.rotation(event.getTo());
+        }
         player.setLocation(position, rotation);
         ChunkView view = player.getChunkView();
         if (view != null) {
