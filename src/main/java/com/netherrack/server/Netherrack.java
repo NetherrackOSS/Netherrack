@@ -147,7 +147,7 @@ public class Netherrack {
         return bans;
     }
 
-    /** The name/XUID/UUID pairs plugins use for offline player lookups. */
+    /** The Nukkit-style per-player identity files plugins use for offline player lookups. */
     public PlayerIdentities getPlayerIdentities() {
         return playerIdentities;
     }
@@ -296,7 +296,7 @@ public class Netherrack {
         permissions = Permissions.load(Permissions.FILE, defaultPermission());
         whitelist = Whitelist.load(Whitelist.FILE);
         bans = BanList.load(BanList.FILE);
-        playerIdentities = PlayerIdentities.load(PlayerIdentities.FILE);
+        playerIdentities = PlayerIdentities.load(PlayerIdentities.DIRECTORY);
 
         NettyLogBridge.setDebug(settings.getBoolean("logs.debug"));
         if (NettyLogBridge.isDebug()) {

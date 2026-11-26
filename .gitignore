@@ -1,8 +1,10 @@
 logs/
+players/
 target/
 worlds/
 
 dependency-reduced-pom.xml
 netherrack.yml
 permissions.json
+player-identity.json
 server.properties

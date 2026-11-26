@@ -16,14 +16,19 @@
   stores. Metadata is per session and is not written to disk.
 - **Offline player lookup:** `Server.getOfflinePlayer(nameOrXuid)`, `getOfflinePlayer(UUID)` and
   `getOfflinePlayers()` return `OfflinePlayer` identities with the last known name, UUID, XUID and
-  online state. New names and ids are recorded in `player-identity.json`, and lookup also considers
-  online players, permissions, the whitelist, bans and saved world UUIDs. This is an identity API,
-  not a saved inventory or position API.
+  online state. New names and ids are kept in Nukkit-style `players/<uuid>.json` files, and lookup
+  also considers online players, permissions, the whitelist, bans and saved world UUIDs. This is an
+  identity API, not a saved inventory or position API.
 - **Item stacks in events:** the API's `ItemStack` gives plugins a protocol-free view of a stack's
   id, count and damage; `InventoryClickAction`, `DamageCause` and `TeleportCause` name the matching
   gameplay causes without leaking protocol enums.
 
 ### Changed
+- **Offline identity storage:** the old `player-identity.json` index is imported once into
+  `players/<uuid>.json` and then removed. Each file carries the player's name, UUID, XUID and
+  `firstPlayed`/`lastPlayed` timestamps, following Nukkit's `players/` folder and UUID-based player
+  data; an in-memory index covers name and XUID lookups without duplicating inventories or
+  positions.
 - **Plugin API version:** the API artifact and JitPack tag are now `v0.6.0-SNAPSHOT`, the server
   version is `0.6.0-beta`, and plugins declare `api-version: 0.6.0`; plugins declaring `0.5.x`
   still load because compatibility is checked by major and minor version.
