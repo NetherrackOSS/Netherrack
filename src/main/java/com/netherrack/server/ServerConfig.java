@@ -41,10 +41,8 @@ public class ServerConfig {
                         "Allowed values: \"true\" or \"false\""),
                 new Setting("online-mode", "true",
                         "If true then all connected players must be authenticated to Xbox Live.",
-                        "Clients connecting to remote (non-LAN) servers will always require Xbox Live authentication"
-                                + " regardless of this setting.",
-                        "If the server accepts connections from the Internet, then it's highly recommended to enable"
-                                + " online-mode.",
+                        "Disabling it accepts self-signed/offline logins and NetherNet tokens, so only turn it off on"
+                                + " a trusted LAN or behind a proxy.",
                         "Allowed values: \"true\" or \"false\""),
                 new Setting("server-port", "19132",
                         "Which IPv4 port the server should listen to.",

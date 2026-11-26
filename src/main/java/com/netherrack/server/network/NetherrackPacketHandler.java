@@ -29,6 +29,8 @@ import io.netty.buffer.Unpooled;
 import org.cloudburstmc.math.vector.Vector2f;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.math.vector.Vector3i;
+import org.cloudburstmc.netty.channel.nethernet.NetherNetChildChannel;
+import org.cloudburstmc.netty.util.nethernet.PlayerInfo;
 import org.cloudburstmc.netty.util.nethernet.TransportIdentityBinding;
 import org.cloudburstmc.protocol.bedrock.BedrockServerSession;
 import org.cloudburstmc.protocol.bedrock.codec.v2225.Bedrock_v2225;
@@ -222,6 +224,7 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
 
     @Override
     public PacketSignal handle(LoginPacket packet) {
+        boolean onlineMode = netherrack.isOnlineMode();
         try {
             // Handles both the legacy 3-link certificate chain (and the 1-link self-signed/
             // offline variant) and the newer single-Token format that signed-in Xbox Live
@@ -233,9 +236,21 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
             ChainValidationResult.IdentityData identityData = identityClaims.extraData;
 
             username = identityData.displayName;
-            if (identityData.xuid != null) {
+            if (identityData.xuid != null && !identityData.xuid.isBlank()) {
                 xuid = identityData.xuid;
             }
+
+            // Nukkit refuses an unauthenticated chain when xbox-auth is on, and also insists that
+            // a signed chain actually carry a XUID. An offline login is only allowed when the
+            // server has explicitly turned that requirement off.
+            if (onlineMode && (!result.signed() || username == null || username.isBlank()
+                    || xuid.isBlank() || identityData.identity == null)) {
+                Logger.warn("Disconnecting " + getDisplayName()
+                        + ": online-mode requires an Xbox Live login.");
+                SessionDisconnect.disconnect(session, netherrack.getOnlineModeMessage());
+                return PacketSignal.HANDLED;
+            }
+
             readClientData(packet.getClientJwt(), identityClaims);
             uuid = identityData.identity != null
                     ? identityData.identity.toString()
@@ -263,7 +278,26 @@ public class NetherrackPacketHandler implements BedrockPacketHandler {
                 SessionDisconnect.disconnect(session, mismatch);
                 return PacketSignal.HANDLED;
             }
+
+            // Nukkit also compares the XUID the client claims in its login chain with the one its
+            // transport token proved. Only online mode can make that comparison: offline tokens
+            // need not carry a trustworthy XUID at all.
+            if (onlineMode) {
+                PlayerInfo info = session.getPeer().getChannel()
+                        .attr(NetherNetChildChannel.PLAYER_INFO).get();
+                if (info == null || !xuid.equalsIgnoreCase(info.xuid())) {
+                    Logger.warn("Disconnecting " + username + ": NetherNet identity mismatch.");
+                    SessionDisconnect.disconnect(session, netherrack.getOnlineModeMessage());
+                    return PacketSignal.HANDLED;
+                }
+            }
         } catch (Exception e) {
+            if (onlineMode) {
+                Logger.warn("Disconnecting " + getDisplayName() + ": login chain validation failed: "
+                        + e.getMessage());
+                SessionDisconnect.disconnect(session, netherrack.getOnlineModeMessage());
+                return PacketSignal.HANDLED;
+            }
             Logger.warn("Failed to validate the login chain, falling back to a random profile: " + e.getMessage());
         }
 

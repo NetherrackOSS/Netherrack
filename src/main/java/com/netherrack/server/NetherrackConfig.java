@@ -135,6 +135,10 @@ public class NetherrackConfig {
                 new Section("messages", List.of(
                         new Setting("server-shutdown", "Server closed", true,
                                 "What the players still on the server are shown when it closes."),
+                        new Setting("server-online-mode",
+                                "You must be signed into Xbox Live to join this server!", true,
+                                "What a player without Xbox Live authentication is shown when"
+                                        + " online-mode is true."),
                         new Setting("server-whitelist", "You are not whitelisted on this server!", true,
                                 "What a player who isn't on the whitelist is shown as they're turned away."),
                         new Setting("server-ban", "You are banned!", true,

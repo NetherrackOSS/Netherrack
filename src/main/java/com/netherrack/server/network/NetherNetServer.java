@@ -17,11 +17,13 @@ import org.cloudburstmc.netty.channel.nethernet.NetherNetChildChannel;
 import org.cloudburstmc.netty.channel.nethernet.NetherNetServerChannel;
 import org.cloudburstmc.netty.channel.nethernet.signaling.NetherNetHTTPServerSignaling;
 import org.cloudburstmc.netty.channel.nethernet.signaling.PongData;
+import org.cloudburstmc.netty.util.nethernet.Identity;
 import org.cloudburstmc.netty.util.nethernet.OperatorIdentity;
 import org.cloudburstmc.netty.util.nethernet.PlayerInfo;
 import org.cloudburstmc.netty.util.nethernet.TokenTrust;
 import org.cloudburstmc.protocol.bedrock.BedrockServerSession;
 import org.cloudburstmc.protocol.bedrock.codec.v2225.Bedrock_v2225;
+import org.jose4j.jwt.JwtClaims;
 
 import java.io.File;
 import java.net.InetSocketAddress;
@@ -70,11 +72,24 @@ public class NetherNetServer {
 
         NetherNetHTTPServerSignaling signaling = new NetherNetHTTPServerSignaling.Builder()
                 .setIdentity(identity)
-                // Requires a real Xbox-issued token from connecting clients. NetherNet has no
-                // RakNet-style ping/pong of its own to authenticate against, so this is what
-                // actually establishes who's connecting - without it, any client could present
-                // any identity.
-                .setTokenTrust(TokenTrust.MINECRAFT_AUTH)
+                // Nukkit switches this with xbox-auth, and the choice has to be made per call:
+                // online mode requires a real Xbox-issued token, offline mode accepts the client's
+                // self-signed one. The Bedrock login check in NetherrackPacketHandler applies the
+                // same setting to the protocol's certificate chain.
+                .setTokenTrust(new TokenTrust() {
+                    @Override
+                    public JwtClaims claims(Identity player) throws Exception {
+                        return (netherrack.isOnlineMode() ? TokenTrust.MINECRAFT_AUTH : TokenTrust.ANY)
+                                .claims(player);
+                    }
+
+                    @Override
+                    public void prepare() {
+                        if (netherrack.isOnlineMode()) {
+                            TokenTrust.MINECRAFT_AUTH.prepare();
+                        }
+                    }
+                })
                 // Netherrack has no TLS certificate management yet. The real client falls back
                 // to plaintext HTTP signaling when the server doesn't require TLS - see
                 // Network's docs/external-signaling notes - so this keeps a direct-connect
@@ -83,7 +98,7 @@ public class NetherNetServer {
                 // Nukkit rebuilds its query information for each server-list request instead of
                 // caching a MOTD. PongData is an immutable record, so a fixed setMotd(...) would
                 // keep the player count from startup forever; a provider makes it live.
-                .setMotdProvider((host, address, client) -> buildMotd(players, maxPlayers))
+                .setMotdProvider((host, address, client) -> buildMotd(players, maxPlayers, netherrack))
                 .build();
 
         eventLoopGroup = new NioEventLoopGroup();
@@ -161,7 +176,8 @@ public class NetherNetServer {
      * of the semicolon-delimited MOTD string RakNet's advertisement used. Built for every
      * request so the player count is the number online now, not the number at startup.
      */
-    private PongData buildMotd(PlayerManager players, int maxPlayers) {
+    private PongData buildMotd(PlayerManager players, int maxPlayers, Netherrack netherrack) {
+        boolean onlineMode = netherrack.isOnlineMode();
         return new PongData.Builder()
                 .setServerName(config.get("server-name", "Netherrack Server"))
                 .setProtocol(Bedrock_v2225.CODEC.getProtocolVersion())
@@ -169,6 +185,10 @@ public class NetherNetServer {
                 .setLevelName(config.get("level-name", "Bedrock level"))
                 .setPlayerCount(players.getPlayers().size())
                 .setMaxPlayerCount(maxPlayers)
+                // Nukkit marks both flags from xbox-auth so the client shows whether the server
+                // requires an Xbox account or accepts self-signed logins.
+                .setOnlineAuth(onlineMode)
+                .setSelfSignedAuth(!onlineMode)
                 // transportLayer, connectionType and dataVersion are left at PongData's own
                 // defaults (see PongData.DEFAULT) - this project doesn't yet know the exact
                 // wire values the real client expects for these specifically, and they aren't

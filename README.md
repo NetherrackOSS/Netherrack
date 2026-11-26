@@ -201,7 +201,7 @@ Open Bedrock Edition on the same machine (or network) and connect to the server 
 | `gamemode` | `survival` | Default game mode for new players |
 | `difficulty` | `normal` | `peaceful`, `easy`, `normal`, or `hard` (stored in the world and synced to players; mob/combat difficulty rules are still limited) |
 | `max-players` | `20` | Maximum concurrent players |
-| `online-mode` | `true` | Generated but currently ignored — NetherNet always requires Xbox authentication |
+| `online-mode` | `true` | Require Xbox Live login chains and NetherNet tokens; `false` allows self-signed/offline logins (trusted LAN or proxy only) |
 | `white-list` | `false` | Only allow players in `whitelist.json`, plus operators, when enabled |
 | `server-port` | `19132` | Listening port |
 | `server-ip` | `0.0.0.0` | Bind address; `0.0.0.0` listens on all interfaces |
@@ -231,6 +231,7 @@ Open Bedrock Edition on the same machine (or network) and connect to the server 
 | `labels` | `timestamp-color`, `thread-color`, `info-color`, `warn-color`, `error-color`, `debug-color` | `cyan`, `yellow`, `blue`, `red`, `bright-red`, `null`, `null` | Named color for each label; `null` leaves it plain |
 | `labels` | `bracket-color` | `null` | Named color for brackets around placeholders; `null` leaves them plain |
 | `messages` | `server-shutdown` | `Server closed` | Message shown to players when the server closes |
+| `messages` | `server-online-mode` | `You must be signed into Xbox Live to join this server!` | Disconnect reason for unauthenticated logins when `online-mode=true` |
 | `messages` | `server-whitelist` | `You are not whitelisted on this server!` | Disconnect reason shown to players turned away by the whitelist |
 | `messages` | `server-ban` | `You are banned!` | Disconnect reason shown to banned players; the stored reason is appended |
 | `level` | `preset-type` | `Classic Flat` | Flat preset used for new `flat` worlds |

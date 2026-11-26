@@ -180,6 +180,11 @@ public class Netherrack {
         whitelist.reload();
     }
 
+    /** Whether clients must authenticate with Xbox Live, as Nukkit's xbox-auth setting does. */
+    public boolean isOnlineMode() {
+        return config.getBoolean("online-mode", true);
+    }
+
     /**
      * Operators always pass, and an empty XUID is fine for offline accounts: the whitelist entry
      * may be by gamertag or UUID instead.
@@ -192,6 +197,13 @@ public class Netherrack {
             return true;
         }
         return whitelist != null && whitelist.contains(name, xuid, uuid);
+    }
+
+    /** The disconnect reason for a login without Xbox Live authentication when it is required. */
+    public String getOnlineModeMessage() {
+        String message = settings.getString("messages.server-online-mode");
+        return message == null || message.isBlank()
+                ? "You must be signed into Xbox Live to join this server!" : message;
     }
 
     /** The disconnect reason from netherrack.yml, with a safe fallback for older configs. */
@@ -298,6 +310,9 @@ public class Netherrack {
         bans = BanList.load(BanList.FILE);
         playerIdentities = PlayerIdentities.load(PlayerIdentities.DIRECTORY);
 
+        if (!isOnlineMode()) {
+            Logger.warn(lang.get("server.xbox_auth_disabled"));
+        }
         NettyLogBridge.setDebug(settings.getBoolean("logs.debug"));
         if (NettyLogBridge.isDebug()) {
             Logger.warn(lang.get("server.debug_enabled"));

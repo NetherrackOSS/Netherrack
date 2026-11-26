@@ -24,6 +24,13 @@
   gameplay causes without leaking protocol enums.
 
 ### Changed
+- **Working online mode:** `online-mode` in server.properties now controls Xbox Live authentication
+  the way Nukkit's `xbox-auth` does. When enabled, NetherNet requires a Minecraft-issued token, the
+  Bedrock login chain must be signed and carry a XUID matching the transport's, and failed validation
+  disconnects the client instead of creating a random profile. When disabled, self-signed/offline
+  logins are accepted, the server-list MOTD reports self-signed auth, and the console warns that the
+  setting should only be used on a trusted LAN or behind a proxy. The disconnect reason is
+  configurable through `messages.server-online-mode`.
 - **Offline identity storage:** the old `player-identity.json` index is imported once into
   `players/<uuid>.json` and then removed. Each file carries the player's name, UUID, XUID and
   `firstPlayed`/`lastPlayed` timestamps, following Nukkit's `players/` folder and UUID-based player
