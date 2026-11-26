@@ -47,9 +47,6 @@ final class PluginCommandAdapter implements Command {
     @Override
     public void execute(Netherrack netherrack, CommandSender sender, String[] args, String label) {
         com.netherrack.api.command.CommandSender target = server.sender(sender);
-        if (sender.getPlayer() != null) {
-            target = new LoggingApiCommandSender(target);
-        }
         boolean handled = command.execute(target, label, args);
         if (!handled) {
             sender.sendText(command.getUsage());

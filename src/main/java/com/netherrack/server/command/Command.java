@@ -79,10 +79,9 @@ public interface Command {
      */
     static void broadcastCommandMessage(Netherrack server, CommandSender sender, String key,
                                         String... params) {
-        CommandSender source = LoggingCommandSender.unwrap(sender);
-        Player sourcePlayer = source.getPlayer();
+        Player sourcePlayer = sender.getPlayer();
         if (sourcePlayer != null) {
-            source.sendText(CommandSender.render(langOf(sourcePlayer), key, params));
+            sender.sendText(CommandSender.render(langOf(sourcePlayer), key, params));
         }
         Logger.info(adminLine(Lang.current, sender.getName(), key, params));
         for (Player operator : server.getPlayerManager().getPlayers()) {

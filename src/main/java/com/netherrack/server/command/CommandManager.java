@@ -43,10 +43,6 @@ public class CommandManager {
             return;
         }
 
-        // Console replies already go to the log; player replies need a wrapper so the operator
-        // watching the console sees them too, whether or not the command broadcasts its result.
-        CommandSender target = sender.getPlayer() == null ? sender : new LoggingCommandSender(sender);
-
         String[] parts = input.split("\\s+");
         String label = parts[0];
         String name = label.toLowerCase(Locale.ROOT);
@@ -54,18 +50,18 @@ public class CommandManager {
 
         Command command = commandsByName.get(name);
         if (command == null) {
-            target.sendFailure("commands.generic.unknown", parts[0]);
+            sender.sendFailure("commands.generic.unknown", parts[0]);
             return;
         }
-        if (target.getPermissionLevel() < command.getPermissionLevel()) {
-            target.sendFailure("commands.generic.error.permissions", label);
+        if (sender.getPermissionLevel() < command.getPermissionLevel()) {
+            sender.sendFailure("commands.generic.error.permissions", label);
             return;
         }
         String node = command.getPermissionNode();
-        if (!node.isBlank() && !server.getPluginManager().hasPermission(target, node)) {
-            target.sendFailure("commands.generic.error.permissions", label);
+        if (!node.isBlank() && !server.getPluginManager().hasPermission(sender, node)) {
+            sender.sendFailure("commands.generic.error.permissions", label);
             return;
         }
-        command.execute(server, target, args, label);
+        command.execute(server, sender, args, label);
     }
 }

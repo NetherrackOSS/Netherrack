@@ -21,9 +21,8 @@
 - **Operator command broadcasts:** successful administrative command replies are now shown to the
   console and other online operators as `[Sender: result]`, like Cloudburst Nukkit's admin command
   broadcasts. Every recipient gets the result in their own language: the console uses the server
-  language, and other operators see it in gray italics. Every other player command reply - errors,
-  usage, help, version and plugin commands - is also logged to the console, without duplicating
-  replies that were broadcast.
+  language, and other operators see it in gray italics. Other replies to player commands - errors,
+  usage, help, version and plugin commands - stay with the player and are not copied to the console.
 
 ### Changed
 - **Vanilla command wording:** the vanilla keys in `lang/en-US.properties` and
