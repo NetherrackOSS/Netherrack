@@ -21,7 +21,7 @@
 </p>
 
 > [!WARNING]
-> Netherrack **v0.4.0-beta** is experimental software. Expect missing features, bugs, and
+> Netherrack **v0.6.0-beta** is experimental software. Expect missing features, bugs, and
 > glitches. Do not use it for a production server or a world you care about without keeping
 > independent backups.
 
@@ -103,7 +103,7 @@ the defaults are used. This keeps scripted launches from swallowing console comm
 You should see something like this:
 
 ```
-[16:01:07] [main] [INFO] Starting Netherrack server version 0.4.0-beta
+[16:01:07] [main] [INFO] Starting Netherrack server version 0.6.0-beta
 [16:01:07] [main] [INFO] First-time setup detected. Launching setup wizard...
 
 ═══════════════════════════════════════════════════════════════
@@ -199,7 +199,7 @@ Open Bedrock Edition on the same machine (or network) and connect to the server 
 | --- | --- | --- |
 | `server-name` | `Netherrack Server` | Name shown in the server list |
 | `gamemode` | `survival` | Default game mode for new players |
-| `difficulty` | `normal` | `peaceful`, `easy`, `normal`, or `hard` (stored in the world and synced to players; mob/combat difficulty rules are still limited) |
+| `difficulty` | `normal` | `peaceful`, `easy`, `normal`, or `hard` (stored in the world and synced to players; hunger and starvation follow it, mob/combat rules are still limited) |
 | `max-players` | `20` | Maximum concurrent players |
 | `online-mode` | `true` | Require Xbox Live login chains and NetherNet tokens; `false` allows self-signed/offline logins (trusted LAN or proxy only) |
 | `white-list` | `false` | Only allow players in `whitelist.json`, plus operators, when enabled |
@@ -323,7 +323,7 @@ Available flat presets: `Classic Flat`, `Tunneler's Dream`, `Water World`, `Over
 
 # 🚧 Current status
 
-v0.4.0-beta is an early beta, not a feature-complete server. Known gaps and untested areas
+v0.6.0-beta is an early beta, not a feature-complete server. Known gaps and untested areas
 include:
 
 - Long-term stability, many simultaneous players, and shutdown or crash edge cases.

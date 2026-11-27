@@ -22,7 +22,7 @@ creates `plugins/HelloPlugin/config.yml` and prints lines like these:
 ```
 Loaded plugin HelloPlugin v1.0.0 from hello-plugin-1.0.0.jar
 [HelloPlugin] HelloPlugin loaded
-[HelloPlugin] Hello from HelloPlugin! (running on 0.4.0-beta)
+[HelloPlugin] Hello from HelloPlugin! (running on 0.6.0-beta)
 [HelloPlugin] HelloPlugin heard the server start.
 ```
 

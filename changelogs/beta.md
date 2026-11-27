@@ -40,6 +40,12 @@
   version is `0.6.0-beta`, and plugins declare `api-version: 0.6.0`; plugins declaring `0.5.x`
   still load because compatibility is checked by major and minor version.
 
+### Fixed
+- **Difficulty didn't change survival:** starvation and natural healing were hardcoded to easy no
+  matter what `/difficulty` or `server.properties` said. Hunger no longer drains on peaceful,
+  starvation stops at 10 health on easy and 1 on normal, hard can starve a player to death, and
+  peaceful heals freely. Changing difficulty now applies immediately.
+
 # v0.5.0-beta
 
 ### Added

@@ -41,9 +41,9 @@ import java.util.Set;
  * exhaustion of moving are measured from the positions it reports.
  * <p>
  * The numbers match vanilla's where it matters: 20 health, 20 hunger, 5 starting
- * saturation, regeneration and starvation every 4 seconds, and exhaustion reducing
- * saturation first and hunger once that's gone. The world runs on easy difficulty (see
- * StartGamePacket in NetherrackPacketHandler), so starvation stops at 10 health.
+ * saturation, regeneration and starvation every four seconds, and exhaustion reducing
+ * saturation first and hunger once that's gone. Healing and starvation follow the world's
+ * difficulty, so changing it with /difficulty takes effect without a restart.
  */
 public final class PlayerSurvival {
 
@@ -52,14 +52,16 @@ public final class PlayerSurvival {
     public static final int MAX_AIR = 300;
     public static final float START_SATURATION = 5f;
 
-    /** StartGame tells the client the world is on this difficulty: 0 peaceful, 1 easy, 2 normal, 3 hard. */
-    private static final int DIFFICULTY = 1;
+    /** The difficulties StartGame sends to clients: 0 peaceful, 1 easy, 2 normal, 3 hard. */
+    private static final int PEACEFUL = 0;
+    private static final int NORMAL = 2;
+    private static final int HARD = 3;
 
     /** Vanilla's natural regeneration and starvation pace: once every four seconds. */
     private static final int FOOD_TICK_INTERVAL = 80;
 
-    /** Below this much health, easy difficulty stops starvation. */
-    private static final float STARVATION_FLOOR = 10f;
+    /** Easy difficulty's starvation floor, also the fallback for an unexpected difficulty. */
+    private static final float EASY_STARVATION_FLOOR = 10f;
 
     /** How long a dead player's body stays visible to the others: twenty ticks, a second of game time. */
     private static final long CORPSE_LINGER_MILLIS = 20 * 50;
@@ -381,20 +383,30 @@ public final class PlayerSurvival {
         }
     }
 
-    /** Natural regeneration above 18 hunger, starvation at 0, once every four seconds. */
+    /** Natural healing and starvation once every four seconds, as the world's difficulty allows. */
     private void tickFood() {
         if (++foodTickTimer < FOOD_TICK_INTERVAL) {
             return;
         }
         foodTickTimer = 0;
+        int difficulty = server.getDifficulty();
+        if (difficulty == PEACEFUL) {
+            // Peaceful keeps hunger still and heals freely, even from an empty food bar.
+            if (health < MAX_HEALTH) {
+                heal(1);
+            }
+            return;
+        }
         if (food >= 18 && health < MAX_HEALTH) {
             heal(1);
             exhaust(6);
         } else if (food <= 0) {
-            boolean starves = DIFFICULTY == 3
-                    || (DIFFICULTY == 2 && health > 1)
-                    || (DIFFICULTY == 1 && health > STARVATION_FLOOR);
-            if (starves) {
+            float floor = switch (difficulty) {
+                case HARD -> 0f;
+                case NORMAL -> 1f;
+                default -> EASY_STARVATION_FLOOR;
+            };
+            if (health > floor) {
                 damage(1, DamageCause.STARVATION);
             }
         }
@@ -463,9 +475,15 @@ public final class PlayerSurvival {
         fallDistance = 0;
     }
 
-    /** Adds exhaustion, which first eats saturation and then hunger once saturation is gone. */
+    /**
+     * Adds exhaustion, which first eats saturation and then hunger once saturation is gone.
+     * Peaceful difficulty stops hunger from draining at all.
+     */
     public synchronized void exhaust(double amount) {
         if (dead || amount <= 0 || player.isCreative() || player.isSpectator()) {
+            return;
+        }
+        if (server.getDifficulty() == PEACEFUL) {
             return;
         }
         exhaustion = (float) (exhaustion + amount);

@@ -4,7 +4,7 @@ Netherrack itself is licensed under the [GNU GPL v3.0](LICENSE). This file lists
 third-party code and data that Netherrack redistributes — either shaded into the
 `netherrack.jar` built by Maven or bundled under `src/main/resources/data/`.
 
-Versions below are the ones declared in `pom.xml` for Netherrack 0.4.0-beta. If a
+Versions below are the ones declared in `pom.xml` for Netherrack 0.6.0-beta. If a
 dependency is added, removed or upgraded, this file should be updated with it.
 
 ## Bundled vanilla data
