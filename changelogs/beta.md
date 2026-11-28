@@ -45,6 +45,9 @@
   matter what `/difficulty` or `server.properties` said. Hunger no longer drains on peaceful,
   starvation stops at 10 health on easy and 1 on normal, hard can starve a player to death, and
   peaceful heals freely. Changing difficulty now applies immediately.
+- **NetherNet failed to bind:** the pinned `libdatachannel` arch-detect build pulled a newer Java
+  binding through its floating snapshot dependency, so JNI could not find the expected native
+  method and the server aborted at startup. Both halves are now pinned to the same build.
 
 # v0.5.0-beta
 

@@ -37,7 +37,7 @@
              (libdatachannel-java), see the dependency below. -->
         <cloudburst.network.version>2.0.0.CR6-SNAPSHOT</cloudburst.network.version>
         <cloudburst.protocol.version>3.0.0.Beta15-SNAPSHOT</cloudburst.protocol.version>
-        <libdatachannel.version>0.24.6.0-20261029.091642-10</libdatachannel.version>
+        <libdatachannel.version>0.24.6.0-20261127.134949-15</libdatachannel.version>
     </properties>
 
     <!-- CloudburstMC's own repository. Despite what the READMEs imply, the release artifacts
